@@ -58,7 +58,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │   │                     ETHEREUM PROTOCOL                            │      │
   │   │                                                                  │      │
   │   │  • Bids are commitments enforced by protocol                     │      │
-  │   │  • Builder MUST pay even if they don't reveal payload            │      │
+  │   │  • Builder pays only if same-slot attestations reach quorum      │      │
   │   │  • PTC (Payload Timeliness Committee) verifies payload delivery  │      │
   │   │  • No trusted third party needed!                                │      │
   │   └──────────────────────────────────────────────────────────────────┘      │
@@ -192,7 +192,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  ✅ latest_block_hash: Hash32                                               │
   │     └─► Tracks the most recent execution block hash for continuity          │
   │                                                                             │
-  │  ✅ payload_expected_withdrawals: List[Withdrawal, MAX_WITHDRAWALS]         │
+  │  ✅ payload_expected_withdrawals: List[Withdrawal, MAX_WITHDRAWALS_PER_PAYLOAD]│
   │     └─► Pre-computed withdrawals the payload must honor                     │
   │                                                                             │
   │  SPEC: beacon-chain.md → BeaconState container                              │
@@ -452,7 +452,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
   │  │    │ value               │ Gwei - PAYMENT to proposer           │◄─┼───┤
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
-  │  │    │ execution_payment   │ Gwei - (reserved, currently 0)       │  │   │
+  │  │    │ execution_payment   │ Gwei - Must be non-zero (see spec)   │  │   │
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
   │  │    │ blob_kzg_commitments│ Root - Hash of blob commitments      │  │   │
   │  │    │ _root               │                                      │  │   │
@@ -467,7 +467,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  3. A specific parent (prevents bid reuse on different forks)               │
   │  4. Blob commitments root (ensures DA is also committed)                    │
   │                                                                             │
-  │  If builder doesn't reveal matching payload → STILL PAYS (enforced by PTC)  │
+  │  Builder payment is only finalized if same-slot attestations reach quorum   │
   │                                                                             │
   │  SPEC: beacon-chain.md → ExecutionPayloadBid container                      │
   │        SignedExecutionPayloadBid wraps with BLS signature                   │
@@ -882,7 +882,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  When deciding between EMPTY and FULL for previous slot's block:            │
   │                                                                             │
   │  should_extend_payload(root) returns True if:                               │
-  │    - PTC voted payload was timely (>256 votes for present), OR              │
+  │    - PTC voted payload present (>256) and payload locally available, OR     │
   │    - No proposer boost yet, OR                                              │
   │    - Proposer boost is for different parent, OR                             │
   │    - Proposer boost block builds on FULL version                            │
@@ -1153,7 +1153,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │ REJECT if:                                                          │   │
   │  │   • builder_index is not valid, active, and non-slashed            │   │
   │  │   • builder doesn't have 0x03 (BUILDER_WITHDRAWAL_PREFIX)          │   │
-  │  │   • execution_payment is not zero (reserved field)                 │   │
+  │  │   • execution_payment is zero (reserved field)                     │   │
   │  │   • signature is invalid                                           │   │
   │  │                                                                     │   │
   │  │ IGNORE if:                                                          │   │
@@ -1513,12 +1513,12 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │  If builder doesn't reveal payload:                                 │   │
   │  │                                                                     │   │
   │  │  • PTC votes "payload_present = false"                              │   │
-  │  │  • Payment still goes through if quorum reached!                    │   │
+  │  │  • Payment still goes through if same-slot quorum reached!          │   │
   │  │  • Builder loses MEV opportunity                                    │   │
   │  │  • But proposer still gets paid (builder's stake)                   │   │
   │  │                                                                     │   │
-  │  │  This is the KEY INNOVATION: unconditional payment                  │   │
-  │  │  Builders can't grief proposers by withholding                      │   │
+  │  │  Payment finalization depends on same-slot attestation quorum       │   │
+  │  │  Builders can't grief proposers if quorum is reached                │   │
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
@@ -1842,7 +1842,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  • 512 validators per slot                                                  │
   │  • Balance-weighted selection (sybil resistant)                             │
   │  • Vote at 75% of slot                                                      │
-  │  • Determines if payment quorum reached                                     │
+  │  • Votes on payload timeliness (separate from payment quorum)               │
   │                                                                             │
   │  6. MODIFIED ATTESTATIONS                                                   │
   │  ═════════════════════════                                                  │
@@ -1919,10 +1919,10 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   2. Proposers select bids and include them in beacon blocks
   3. Builders reveal payloads after seeing their bid was selected
   4. PTC (512 validators) votes on whether payloads arrived on time
-  5. Protocol enforces unconditional payment via quorum consensus
+  5. Protocol finalizes payment via same-slot attestation quorum
 
   This creates a trustless, decentralized block building market where:
-  - Builders can't grief proposers (unconditional payment)
+  - Builders can't grief proposers if quorum is reached
   - Proposers can't steal MEV (builder reveals after block)
   - No centralized relay needed (protocol is the escrow)
 ```

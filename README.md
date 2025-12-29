@@ -11,19 +11,19 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   ┌─────────────────────────────────────────────────────────────────────────────┐
   │                        CURRENT SYSTEM (Pre-GLOAS)                           │
   │                                                                             │
-  │   ┌──────────────┐         ┌─────────────────┐         ┌──────────────┐    │
-  │   │   BUILDER    │ ──────► │     RELAY       │ ──────► │  PROPOSER    │    │
-  │   │  (MEV-Boost) │  block  │  (Trusted 3rd   │  block  │ (Validator)  │    │
-  │   └──────────────┘         │     Party)      │         └──────────────┘    │
-  │                            └─────────────────┘                              │
-  │                                    │                                        │
-  │                                    │ PROBLEMS:                              │
+  │   ┌──────────────┐         ┌─────────────────┐         ┌──────────────┐   │
+  │   │   BUILDER    │ ──────► │     RELAY       │ ──────► │  PROPOSER    │   │
+  │   │  (MEV-Boost) │  block  │  (Trusted 3rd   │  block  │ (Validator)  │   │
+  │   └──────────────┘         │     Party)      │         └──────────────┘   │
+  │                            └─────────────────┘                            │
+  │                                    │                                       │
+  │                                    │ PROBLEMS:                             │
   │                                    │ • Relays are centralized              │
   │                                    │ • Relays can censor transactions      │
   │                                    │ • Builders must trust relays          │
   │                                    │ • No protocol-level guarantees        │
   │                                    │ • Relay can steal MEV                 │
-  │                                    ▼                                        │
+  │                                    ▼                                       │
   │                          ┌─────────────────┐                               │
   │                          │  TRUST ISSUES   │                               │
   │                          │  & CENTRALIZED  │                               │
@@ -94,7 +94,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │    deposits                                     │    deposits               │
   │    voluntary_exits                              │    voluntary_exits        │
   │    sync_aggregate                               │    sync_aggregate         │
-  │    bls_to_execution_changes                     │    bls_to_execution_changes
+  │    bls_to_execution_changes                     │    bls_to_execution_changes│
   │                                                 │                           │
   │    ╔══════════════════════════════╗             │    ╔═════════════════════╗│
   │    ║  execution_payload ❌ REMOVED ║             │    ║ signed_execution_   ║│
@@ -179,7 +179,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  ✅ execution_payload_availability: Bitvector[SLOTS_PER_HISTORICAL_ROOT]    │
   │     └─► Tracks which slots had payloads delivered (for attestation rewards)│
   │                                                                             │
-  │  ✅ builder_pending_payments: Vector[BuilderPendingPayment, 2*SLOTS_PER_EPOCH]
+  │  ✅ builder_pending_payments: Vector[BuilderPendingPayment, 2*SLOTS_PER_EPOCH]│
   │     └─► Payments waiting for quorum confirmation (2 epoch window)          │
   │                                                                             │
   │  ✅ builder_pending_withdrawals: List[BuilderPendingWithdrawal, 1M limit]   │
@@ -646,7 +646,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  2-EPOCH WINDOW (from beacon-chain.md):                                     │
   │  ═══════════════════════════════════════                                    │
   │                                                                             │
-  │  builder_pending_payments: Vector[BuilderPendingPayment, 2 * SLOTS_PER_EPOCH]
+  │  builder_pending_payments: Vector[BuilderPendingPayment, 2 * SLOTS_PER_EPOCH]│
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │ Epoch N-1 slots          │            Epoch N slots                 │   │
@@ -680,7 +680,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │                                                                             │
   │    Simple binary: block exists or doesn't                                   │
   │                                                                             │
-  │  ──────────────────────────────────────────────────────────────────────────│
+  │  ───────────────────────────────────────────────────────────────────────── │
   │                                                                             │
   │  AFTER (GLOAS): A block can be "empty" or "full"                            │
   │  ════════════════════════════════════════════════                           │
@@ -743,7 +743,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │           │ B4  │ ◄── HEAD                                                 │
   │           └─────┘                                                          │
   │                                                                             │
-  │  ──────────────────────────────────────────────────────────────────────────│
+  │  ───────────────────────────────────────────────────────────────────────── │
   │                                                                             │
   │  AFTER: Tree with BOTH block AND payload status                             │
   │  ═════════════════════════════════════════════════                          │
@@ -792,7 +792,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │        head = child with max(weight)                                        │
   │    return head                                                              │
   │                                                                             │
-  │  ──────────────────────────────────────────────────────────────────────────│
+  │  ───────────────────────────────────────────────────────────────────────── │
   │                                                                             │
   │  AFTER: Navigate BOTH block tree AND payload status                         │
   │  ═══════════════════════════════════════════════════                        │
@@ -937,7 +937,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │      store.ptc_vote[root] = [False] * 512                           │   │
   │  │                                                                     │   │
   │  │      # NEW: Process payload attestations from previous slot         │   │
-  │  │      notify_ptc_messages(store, state, block.body.payload_attestations)
+  │  │      notify_ptc_messages(store, state, block.body.payload_attestations)│
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
@@ -959,10 +959,10 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │      state = copy(store.block_states[envelope.beacon_block_root])   │   │
   │  │                                                                     │   │
   │  │      # Process the execution payload (full validation)              │   │
-  │  │      process_execution_payload(state, signed_envelope, EXECUTION_ENGINE)
+  │  │      process_execution_payload(state, signed_envelope, EXECUTION_ENGINE)│
   │  │                                                                     │   │
   │  │      # Store the post-payload state                                 │   │
-  │  │      store.execution_payload_states[envelope.beacon_block_root] = state
+  │  │      store.execution_payload_states[envelope.beacon_block_root] = state│
   │  │      #                                                              │   │
   │  │      # This makes the FULL version of this block available         │   │
   │  │      # in fork choice!                                              │   │
@@ -986,7 +986,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │                                                                     │   │
   │  │      # Update the PTC vote tracking                                 │   │
   │  │      ptc_index = ptc.index(msg.validator_index)                     │   │
-  │  │      store.ptc_vote[data.beacon_block_root][ptc_index] = data.payload_present
+  │  │      store.ptc_vote[data.beacon_block_root][ptc_index] = data.payload_present│
   │  │      #                                                              │   │
   │  │      # True = "I saw the payload"                                   │   │
   │  │      # False = "I did NOT see the payload"                          │   │
@@ -1025,7 +1025,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  • sync_committee messages                                                  │
   │  • data_column_sidecar_{subnet_id}                                          │
   │                                                                             │
-  │  ──────────────────────────────────────────────────────────────────────────│
+  │  ───────────────────────────────────────────────────────────────────────── │
   │                                                                             │
   │  AFTER (GLOAS): Expanded and modified                                       │
   │  ════════════════════════════════════                                       │
@@ -1169,7 +1169,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  AFTER:  BUILDER distributes sidecars, not proposer!                        │
   │          Verification is done differently:                                  │
   │          1. Get bid from beacon block                                       │
-  │          2. Check hash(sidecar.kzg_commitments) == bid.blob_kzg_commitments_root
+  │          2. Check hash(sidecar.kzg_commitments) == bid.blob_kzg_commitments_root│
   │          3. Verify slot and beacon_block_root match                         │
   │                                                                             │
   │          → No proposer signature needed on sidecars                         │
@@ -1227,7 +1227,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  Use case: Syncing execution payloads for a range of slots                  │
   │            (like BeaconBlocksByRange, but for payloads)                     │
   │                                                                             │
-  │  ──────────────────────────────────────────────────────────────────────────│
+  │  ───────────────────────────────────────────────────────────────────────── │
   │                                                                             │
   │  ExecutionPayloadEnvelopesByRoot v1 ✨ NEW                                  │
   │  ═════════════════════════════════════════                                  │
@@ -1504,7 +1504,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
-  │  ──────────────────────────────────────────────────────────────────────────│
+  │  ───────────────────────────────────────────────────────────────────────── │
   │                                                                             │
   │  MODIFIED DUTY: Attestations Now Signal Payload Status                      │
   │  ═════════════════════════════════════════════════════                      │
@@ -1526,7 +1526,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
-  │  ──────────────────────────────────────────────────────────────────────────│
+  │  ───────────────────────────────────────────────────────────────────────── │
   │                                                                             │
   │  MODIFIED DUTY: Block Proposal                                              │
   │  ═════════════════════════════                                              │

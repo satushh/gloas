@@ -2233,3 +2233,295 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 10. FAQ
+
+### Q1: What is the difference between MIN_DEPOSIT_AMOUNT and MIN_ACTIVATION_BALANCE?
+
+These are two different thresholds in the validator lifecycle:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│           MIN_DEPOSIT_AMOUNT vs MIN_ACTIVATION_BALANCE                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  MIN_DEPOSIT_AMOUNT = 1 ETH (1 * 10^9 Gwei)                                 │
+│  ══════════════════════════════════════════                                 │
+│                                                                             │
+│  • Minimum amount for a SINGLE deposit transaction                          │
+│  • You can make multiple deposits to the same validator                     │
+│  • Each individual deposit must be at least 1 ETH                           │
+│  • Prevents spam/dust deposits                                              │
+│                                                                             │
+│  ───────────────────────────────────────────────────────────────────────── │
+│                                                                             │
+│  MIN_ACTIVATION_BALANCE = 32 ETH (32 * 10^9 Gwei)                           │
+│  ════════════════════════════════════════════════                           │
+│                                                                             │
+│  • Minimum TOTAL balance needed to become an active validator               │
+│  • Must accumulate this much before entering activation queue               │
+│  • The "full stake" required to participate in consensus                    │
+│                                                                             │
+│  ───────────────────────────────────────────────────────────────────────── │
+│                                                                             │
+│  EXAMPLE FLOW:                                                              │
+│                                                                             │
+│    Deposit #1:  8 ETH  ✓ (≥ MIN_DEPOSIT_AMOUNT)                             │
+│    Deposit #2: 10 ETH  ✓                                                    │
+│    Deposit #3: 14 ETH  ✓                                                    │
+│                ───────                                                      │
+│    Total:      32 ETH  → Now eligible for activation!                       │
+│                          (≥ MIN_ACTIVATION_BALANCE)                         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**TL;DR:**
+- `MIN_DEPOSIT_AMOUNT` (1 ETH) = minimum per deposit transaction
+- `MIN_ACTIVATION_BALANCE` (32 ETH) = minimum total balance to activate
+
+---
+
+### Q2: Do builders need 64 ETH (32 + 32)?
+
+**No!** Builders need **32 ETH to activate** (same as any validator). The 32 ETH is a **reserve** they must keep - they can only use balance **above** 32 ETH for payments.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Builder Balance Structure                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Builder with 50 ETH balance:                                               │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                                                                     │   │
+│  │   50 ETH total                                                      │   │
+│  │   ┌─────────────────────────────────────────────────────────────┐  │   │
+│  │   │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│░░░░░░░░░░░░░░░░░░░░░░░░░░│  │   │
+│  │   │         32 ETH                 │        18 ETH              │  │   │
+│  │   │      (LOCKED RESERVE)          │   (AVAILABLE FOR BIDS)     │  │   │
+│  │   │   MIN_ACTIVATION_BALANCE       │                            │  │   │
+│  │   └─────────────────────────────────────────────────────────────┘  │   │
+│  │                                                                     │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  The builder can bid UP TO 18 ETH (if no pending obligations)               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Q3: What are pending_payments and pending_withdrawals in the bid validation?
+
+From `process_execution_payload_bid`:
+```python
+assert (
+    amount == 0
+    or state.balances[builder_index]
+    >= amount + pending_payments + pending_withdrawals + MIN_ACTIVATION_BALANCE
+)
+```
+
+These represent **money already committed** from previous bids. You can't spend the same ETH twice!
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    CONCRETE EXAMPLE                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  SETUP: Builder "Bob" has 50 ETH balance                                    │
+│                                                                             │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│  SLOT 100: Bob's bid of 5 ETH is included in a block                        │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│                                                                             │
+│    builder_pending_payments[slot 100] = {                                   │
+│        weight: 0,          # Will accumulate from attestations              │
+│        withdrawal: {                                                        │
+│            amount: 5 ETH,  # ◄── This is "pending_payments"                 │
+│            builder_index: Bob                                               │
+│        }                                                                    │
+│    }                                                                        │
+│                                                                             │
+│    Bob's balance is still 50 ETH (not deducted yet!)                        │
+│    But 5 ETH is "earmarked" for potential payment                           │
+│                                                                             │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│  SLOT 101: Bob wants to bid again. How much can he bid?                     │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│                                                                             │
+│    Check: balance >= amount + pending_payments + pending_withdrawals        │
+│                       + MIN_ACTIVATION_BALANCE                              │
+│                                                                             │
+│            50 ETH >= X + 5 ETH + 0 ETH + 32 ETH                              │
+│            50 ETH >= X + 37 ETH                                             │
+│            X <= 13 ETH  ◄── Max new bid!                                    │
+│                                                                             │
+│    Bob can bid up to 13 ETH on slot 101                                     │
+│                                                                             │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│  SLOT 101: Bob bids 10 ETH, gets included                                   │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│                                                                             │
+│    Now pending_payments = 5 + 10 = 15 ETH                                   │
+│                                                                             │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│  EPOCH BOUNDARY: Slot 100's payment reaches quorum!                         │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│                                                                             │
+│    • Slot 100's 5 ETH moves from pending_payments → pending_withdrawals     │
+│    • Now:                                                                   │
+│        pending_payments = 10 ETH (slot 101 still pending)                   │
+│        pending_withdrawals = 5 ETH (confirmed, waiting to withdraw)         │
+│                                                                             │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│  SLOT 150: Bob wants to bid again. How much?                                │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│                                                                             │
+│    Check: 50 ETH >= X + 10 ETH + 5 ETH + 32 ETH                              │
+│            50 ETH >= X + 47 ETH                                             │
+│            X <= 3 ETH  ◄── Max new bid!                                     │
+│                                                                             │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│  LATER: The 5 ETH pending_withdrawal gets processed                         │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│                                                                             │
+│    • 5 ETH is actually deducted from Bob's balance                          │
+│    • 5 ETH is sent to the proposer's fee_recipient                          │
+│    • Bob's balance: 50 - 5 = 45 ETH                                         │
+│    • pending_withdrawals: 0 ETH                                             │
+│                                                                             │
+│    Now Bob can bid: 45 - 10 - 0 - 32 = 3 ETH (same, balance dropped too)    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Payment Lifecycle Visual
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         PAYMENT LIFECYCLE                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   BID INCLUDED          EPOCH BOUNDARY           WITHDRAWAL PROCESSED       │
+│   IN BLOCK              (quorum check)           (actual ETH transfer)      │
+│       │                      │                          │                   │
+│       ▼                      ▼                          ▼                   │
+│  ┌─────────┐           ┌─────────┐              ┌─────────────────┐        │
+│  │ builder │  ──────►  │ builder │   ──────►    │ Actual balance  │        │
+│  │ pending │  quorum   │ pending │   withdraw   │ decreased,      │        │
+│  │ payments│  reached  │withdrawals  epoch     │ ETH sent to     │        │
+│  │         │           │         │   reached    │ proposer        │        │
+│  └─────────┘           └─────────┘              └─────────────────┘        │
+│                                                                             │
+│  "I might have     "I definitely       "Money actually                      │
+│   to pay this"      owe this"           left my account"                    │
+│                                                                             │
+│  All three stages count against available balance for new bids!             │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**TL;DR:**
+- `pending_payments` = bids waiting for quorum confirmation (might pay)
+- `pending_withdrawals` = confirmed payments waiting to be withdrawn (will pay)
+- Both are "reserved" and can't be used for new bids
+
+---
+
+### Q4: What happened to attestation.data.index for committee index?
+
+In GLOAS, `attestation.data.index` is **repurposed** to signal payload status (0 = empty, 1 = full).
+
+The committee index moved to `attestation.committee_bits` starting in Electra (EIP-7549).
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Evolution of Committee Identification                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  PRE-ELECTRA (Phase0 through Deneb):                                        │
+│  ═══════════════════════════════════                                        │
+│                                                                             │
+│    AttestationData {                                                        │
+│        slot                                                                 │
+│        index  ◄── Committee index (0, 1, 2, ... N-1)                        │
+│        beacon_block_root                                                    │
+│        source                                                               │
+│        target                                                               │
+│    }                                                                        │
+│                                                                             │
+│    One attestation = one committee                                          │
+│                                                                             │
+│  ───────────────────────────────────────────────────────────────────────── │
+│                                                                             │
+│  ELECTRA (EIP-7549):                                                        │
+│  ═══════════════════                                                        │
+│                                                                             │
+│    Attestation {                                                            │
+│        aggregation_bits                                                     │
+│        data: AttestationData                                                │
+│        committee_bits  ◄── NEW! Bitvector indicating which committees       │
+│        signature                                                            │
+│    }                                                                        │
+│                                                                             │
+│    AttestationData.index = 0 (always, became unused)                        │
+│    Now attestations can aggregate ACROSS multiple committees!               │
+│                                                                             │
+│  ───────────────────────────────────────────────────────────────────────── │
+│                                                                             │
+│  GLOAS (EIP-7732):                                                          │
+│  ═════════════════                                                          │
+│                                                                             │
+│    AttestationData.index REPURPOSED:                                        │
+│        index = 0  →  "Payload EMPTY / not seen"                             │
+│        index = 1  →  "Payload FULL / seen"                                  │
+│                                                                             │
+│    Committee info still in attestation.committee_bits                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**TL;DR:** Electra moved committee identification to `committee_bits`, freeing `data.index` for GLOAS to repurpose as payload status signal.
+
+---
+
+### Q5: Why is MAX_PAYLOAD_ATTESTATIONS = 4?
+
+`MAX_PAYLOAD_ATTESTATIONS` is the maximum number of **aggregated `PayloadAttestation` objects** that can be included in a single beacon block.
+
+PTC members can vote with **different data**, so multiple aggregates may be needed:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    PayloadAttestation Combinations                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  PayloadAttestationData has two boolean fields:                             │
+│  • payload_present: true/false                                              │
+│  • blob_data_available: true/false                                          │
+│                                                                             │
+│  Theoretically 2² = 4 combinations, but one is impossible:                  │
+│                                                                             │
+│  ┌──────────────────┬─────────────────────┬─────────────────────────────┐  │
+│  │ payload_present  │ blob_data_available │ Valid?                      │  │
+│  ├──────────────────┼─────────────────────┼─────────────────────────────┤  │
+│  │ true             │ true                │ ✓ Builder revealed all      │  │
+│  │ true             │ false               │ ✓ Payload seen, blobs lost  │  │
+│  │ false            │ false               │ ✓ Builder withheld all      │  │
+│  │ false            │ true                │ ✗ IMPOSSIBLE - can't have   │  │
+│  │                  │                     │   blobs without payload     │  │
+│  └──────────────────┴─────────────────────┴─────────────────────────────┘  │
+│                                                                             │
+│  So we have 3 meaningful combinations. MAX = 4 provides headroom.           │
+│                                                                             │
+│  IMPORTANT: All payload attestations in a block must reference the SAME     │
+│  beacon_block_root (the parent block). From process_payload_attestation:    │
+│                                                                             │
+│    assert data.beacon_block_root == state.latest_block_header.parent_root   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```

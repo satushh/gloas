@@ -11,24 +11,24 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   ┌─────────────────────────────────────────────────────────────────────────────┐
   │                        CURRENT SYSTEM (Pre-GLOAS)                           │
   │                                                                             │
-  │   ┌──────────────┐         ┌─────────────────┐         ┌──────────────┐   │
-  │   │   BUILDER    │ ──────► │     RELAY       │ ──────► │  PROPOSER    │   │
-  │   │  (MEV-Boost) │  block  │  (Trusted 3rd   │  block  │ (Validator)  │   │
-  │   └──────────────┘         │     Party)      │         └──────────────┘   │
-  │                            └─────────────────┘                            │
-  │                                    │                                       │
-  │                                    │ PROBLEMS:                             │
-  │                                    │ • Relays are centralized              │
-  │                                    │ • Relays can censor transactions      │
-  │                                    │ • Builders must trust relays          │
-  │                                    │ • No protocol-level guarantees        │
-  │                                    │ • Relay can steal MEV                 │
-  │                                    ▼                                       │
-  │                          ┌─────────────────┐                               │
-  │                          │  TRUST ISSUES   │                               │
-  │                          │  & CENTRALIZED  │                               │
-  │                          │  FAILURE POINTS │                               │
-  │                          └─────────────────┘                               │
+  │   ┌──────────────┐         ┌─────────────────┐         ┌──────────────┐     │
+  │   │   BUILDER    │ ──────► │     RELAY       │ ──────► │  PROPOSER    │     │
+  │   │  (MEV-Boost) │  block  │  (Trusted 3rd   │  block  │ (Validator)  │     │
+  │   └──────────────┘         │     Party)      │         └──────────────┘     │
+  │                            └─────────────────┘                              │
+  │                                    │                                        │
+  │                                    │ PROBLEMS:                              │
+  │                                    │ • Relays are centralized               │
+  │                                    │ • Relays can censor transactions       │
+  │                                    │ • Builders must trust relays           │
+  │                                    │ • No protocol-level guarantees         │
+  │                                    │ • Relay can steal MEV                  │
+  │                                    ▼                                        │
+  │                          ┌─────────────────┐                                │
+  │                          │  TRUST ISSUES   │                                │
+  │                          │  & CENTRALIZED  │                                │
+  │                          │  FAILURE POINTS │                                │
+  │                          └─────────────────┘                                │
   └─────────────────────────────────────────────────────────────────────────────┘
 
   Why MEV-Boost exists today:
@@ -44,32 +44,32 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   ┌─────────────────────────────────────────────────────────────────────────────┐
   │                         GLOAS SYSTEM (EIP-7732)                             │
   │                                                                             │
-  │   ┌──────────────┐                                   ┌──────────────┐      │
-  │   │   BUILDER    │ ─────── BID ────────────────────► │  PROPOSER    │      │
-  │   │ (Validator   │         (signed commitment)       │ (Validator)  │      │
-  │   │  with 0x03)  │                                   └──────┬───────┘      │
-  │   └──────┬───────┘                                          │              │
-  │          │                                                  │              │
-  │          │ PAYLOAD                              BEACON BLOCK│              │
-  │          │ (after block)                        (with bid)  │              │
-  │          │                                                  │              │
-  │          ▼                                                  ▼              │
-  │   ┌──────────────────────────────────────────────────────────────────┐    │
-  │   │                     ETHEREUM PROTOCOL                             │    │
-  │   │                                                                   │    │
-  │   │  • Bids are commitments enforced by protocol                     │    │
-  │   │  • Builder MUST pay even if they don't reveal payload            │    │
-  │   │  • PTC (Payload Timeliness Committee) verifies payload delivery  │    │
-  │   │  • No trusted third party needed!                                │    │
-  │   └──────────────────────────────────────────────────────────────────┘    │
-  │                                    │                                       │
-  │                                    ▼                                       │
-  │                          ┌─────────────────┐                              │
-  │                          │   TRUSTLESS!    │                              │
-  │                          │  DECENTRALIZED  │                              │
-  │                          │  CENSORSHIP     │                              │
-  │                          │  RESISTANT      │                              │
-  │                          └─────────────────┘                              │
+  │   ┌──────────────┐                                   ┌──────────────┐       │
+  │   │   BUILDER    │ ─────── BID ────────────────────► │  PROPOSER    │       │
+  │   │ (Validator   │         (signed commitment)       │ (Validator)  │       │
+  │   │  with 0x03)  │                                   └──────┬───────┘       │
+  │   └──────┬───────┘                                          │               │
+  │          │                                                  │               │
+  │          │ PAYLOAD                              BEACON BLOCK│               │
+  │          │ (after block)                        (with bid)  │               │
+  │          │                                                  │               │
+  │          ▼                                                  ▼               │
+  │   ┌──────────────────────────────────────────────────────────────────┐      │
+  │   │                     ETHEREUM PROTOCOL                            │      │
+  │   │                                                                  │      │
+  │   │  • Bids are commitments enforced by protocol                     │      │
+  │   │  • Builder MUST pay even if they don't reveal payload            │      │
+  │   │  • PTC (Payload Timeliness Committee) verifies payload delivery  │      │
+  │   │  • No trusted third party needed!                                │      │
+  │   └──────────────────────────────────────────────────────────────────┘      │
+  │                                    │                                        │
+  │                                    ▼                                        │
+  │                          ┌─────────────────┐                                │
+  │                          │   TRUSTLESS!    │                                │
+  │                          │  DECENTRALIZED  │                                │
+  │                          │  CENSORSHIP     │                                │
+  │                          │  RESISTANT      │                                │
+  │                          └─────────────────┘                                │
   └─────────────────────────────────────────────────────────────────────────────┘
 
   Key insight: The protocol itself becomes the escrow through cryptographic commitments and economic penalties.
@@ -97,9 +97,9 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │    bls_to_execution_changes                     │    bls_to_execution_changes│
   │                                                 │                           │
   │    ╔══════════════════════════════╗             │    ╔═════════════════════╗│
-  │    ║  execution_payload ❌ REMOVED ║             │    ║ signed_execution_   ║│
-  │    ║  blob_kzg_commitments ❌      ║             │    ║ payload_bid ✅ NEW  ║│
-  │    ║  execution_requests ❌        ║             │    ║                     ║│
+  │    ║  execution_payload ❌ REMOVED ║            │    ║ signed_execution_   ║│
+  │    ║  blob_kzg_commitments ❌      ║            │    ║ payload_bid ✅ NEW  ║│
+  │    ║  execution_requests ❌        ║            │    ║                     ║│
   │    ╚══════════════════════════════╝             │    ║ payload_attestations║│
   │                                                 │    ║ ✅ NEW              ║│
   │  }                                              │    ╚═════════════════════╝│
@@ -169,27 +169,27 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  REMOVED:                                                                   │
   │  ────────                                                                   │
   │  ❌ latest_execution_payload_header                                         │
-  │     └─► WHY? No longer storing full header, only the bid commitment        │
+  │     └─► WHY? No longer storing full header, only the bid commitment         │
   │                                                                             │
   │  ADDED:                                                                     │
   │  ──────                                                                     │
   │  ✅ latest_execution_payload_bid: ExecutionPayloadBid                       │
-  │     └─► Stores the committed bid (block_hash, value, builder_index, etc)   │
+  │     └─► Stores the committed bid (block_hash, value, builder_index, etc)    │
   │                                                                             │
   │  ✅ execution_payload_availability: Bitvector[SLOTS_PER_HISTORICAL_ROOT]    │
-  │     └─► Tracks which slots had payloads delivered (for attestation rewards)│
+  │     └─► Tracks which slots had payloads delivered (for attestation rewards) │
   │                                                                             │
   │  ✅ builder_pending_payments: Vector[BuilderPendingPayment, 2*SLOTS_PER_EPOCH]│
-  │     └─► Payments waiting for quorum confirmation (2 epoch window)          │
+  │     └─► Payments waiting for quorum confirmation (2 epoch window)           │
   │                                                                             │
   │  ✅ builder_pending_withdrawals: List[BuilderPendingWithdrawal, 1M limit]   │
-  │     └─► Confirmed payments queued for withdrawal to proposer               │
+  │     └─► Confirmed payments queued for withdrawal to proposer                │
   │                                                                             │
   │  ✅ latest_block_hash: Hash32                                               │
-  │     └─► Tracks the most recent execution block hash for continuity         │
+  │     └─► Tracks the most recent execution block hash for continuity          │
   │                                                                             │
   │  ✅ payload_expected_withdrawals: List[Withdrawal, MAX_WITHDRAWALS]         │
-  │     └─► Pre-computed withdrawals the payload must honor                    │
+  │     └─► Pre-computed withdrawals the payload must honor                     │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -216,21 +216,21 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  └─────────────┴───────────────┴───────────────┴───────────────┘            │
   │        │              │               │               │                     │
   │        │              │               │               │                     │
-  │  ┌─────▼─────┐  ┌─────▼─────┐  ┌─────▼─────┐  ┌─────▼─────┐                │
-  │  │  BUILDER  │  │           │  │           │  │           │                │
-  │  │  sees     │  │           │  │           │  │           │                │
-  │  │  block,   │  │           │  │           │  │           │                │
-  │  │  reveals  │  │           │  │           │  │           │                │
-  │  │  payload  │  │           │  │           │  │           │                │
-  │  └───────────┘  └───────────┘  └───────────┘  └───────────┘                │
+  │  ┌─────▼─────┐  ┌─────▼─────┐  ┌─────▼─────┐  ┌─────▼─────┐                 │
+  │  │  BUILDER  │  │           │  │           │  │           │                 │
+  │  │  sees     │  │           │  │           │  │           │                 │
+  │  │  block,   │  │           │  │           │  │           │                 │
+  │  │  reveals  │  │           │  │           │  │           │                 │
+  │  │  payload  │  │           │  │           │  │           │                 │
+  │  └───────────┘  └───────────┘  └───────────┘  └───────────┘                 │
   │                                                                             │
   │  TIMING CONSTANTS (from validator.md):                                      │
   │  ════════════════════════════════════                                       │
-  │  ATTESTATION_DUE_BPS_GLOAS   = 2500 (25% = 3s)  ← Earlier than before!     │
+  │  ATTESTATION_DUE_BPS_GLOAS   = 2500 (25% = 3s)  ← Earlier than before!      │
   │  AGGREGATE_DUE_BPS_GLOAS     = 5000 (50% = 6s)                              │
   │  SYNC_MESSAGE_DUE_BPS_GLOAS  = 2500 (25% = 3s)                              │
   │  CONTRIBUTION_DUE_BPS_GLOAS  = 5000 (50% = 6s)                              │
-  │  PAYLOAD_ATTESTATION_DUE_BPS = 7500 (75% = 9s)  ← NEW! For PTC             │
+  │  PAYLOAD_ATTESTATION_DUE_BPS = 7500 (75% = 9s)  ← NEW! For PTC              │
   │                                                                             │
   │  WHY EARLIER ATTESTATION DEADLINE?                                          │
   │  ─────────────────────────────────                                          │
@@ -331,10 +331,10 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   ─────────────────────────────────────────────────────────────────────────────
           │                     │                     │                   │
           ▼                     │                     │                   │
-   Next proposer               │                     │                   │
-   includes PTC                │                     │                   │
-   attestations from           │                     │                   │
-   slot N in block             │                     │                   │
+   Next proposer                │                     │                   │
+   includes PTC                 │                     │                   │
+   attestations from            │                     │                   │
+   slot N in block              │                     │                   │
 
   ---
   3.3 The Payment Flow
@@ -346,17 +346,17 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  SLOT N: Bid Committed                                                      │
   │  ════════════════════                                                       │
   │                                                                             │
-  │  ┌─────────────┐      ┌─────────────┐      ┌─────────────────────────┐     │
-  │  │ Builder     │      │ Proposer    │      │ BeaconState             │     │
-  │  │ bid.value   │ ───► │ includes    │ ───► │ builder_pending_payments│     │
-  │  │ = 1 ETH     │      │ bid in      │      │ [slot N] = {            │     │
-  │  │             │      │ block       │      │   weight: 0,            │     │
-  │  └─────────────┘      └─────────────┘      │   withdrawal: {         │     │
-  │                                            │     amount: 1 ETH,      │     │
-  │                                            │     builder_index: X    │     │
-  │                                            │   }                     │     │
-  │                                            │ }                       │     │
-  │                                            └─────────────────────────┘     │
+  │  ┌─────────────┐      ┌─────────────┐      ┌─────────────────────────┐      │
+  │  │ Builder     │      │ Proposer    │      │ BeaconState             │      │
+  │  │ bid.value   │ ───► │ includes    │ ───► │ builder_pending_payments│      │
+  │  │ = 1 ETH     │      │ bid in      │      │ [slot N] = {            │      │
+  │  │             │      │ block       │      │   weight: 0,            │      │
+  │  └─────────────┘      └─────────────┘      │   withdrawal: {         │      │
+  │                                            │     amount: 1 ETH,      │      │
+  │                                            │     builder_index: X    │      │
+  │                                            │   }                     │      │
+  │                                            │ }                       │      │
+  │                                            └─────────────────────────┘      │
   │                                                                             │
   │  SLOT N: Attestations Accumulate Weight                                     │
   │  ═══════════════════════════════════════                                    │
@@ -368,11 +368,11 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │ Attester A      │                                                        │
   │  │ eff_bal: 32 ETH │ ──┐                                                    │
   │  └─────────────────┘   │                                                    │
-  │  ┌─────────────────┐   │    ┌─────────────────────────────┐                │
-  │  │ Attester B      │   ├──► │ payment.weight += eff_bal   │                │
-  │  │ eff_bal: 32 ETH │ ──┤    │ (accumulates with each      │                │
-  │  └─────────────────┘   │    │  same-slot attestation)     │                │
-  │  ┌─────────────────┐   │    └─────────────────────────────┘                │
+  │  ┌─────────────────┐   │    ┌─────────────────────────────┐                 │
+  │  │ Attester B      │   ├──► │ payment.weight += eff_bal   │                 │
+  │  │ eff_bal: 32 ETH │ ──┤    │ (accumulates with each      │                 │
+  │  └─────────────────┘   │    │  same-slot attestation)     │                 │
+  │  ┌─────────────────┐   │    └─────────────────────────────┘                 │
   │  │ Attester C      │ ──┘                                                    │
   │  │ eff_bal: 64 ETH │                                                        │
   │  └─────────────────┘                                                        │
@@ -382,17 +382,17 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │                                                                             │
   │  At epoch processing (process_builder_pending_payments):                    │
   │                                                                             │
-  │  ┌─────────────────────────────────────────────────────────────────────┐   │
-  │  │                                                                     │   │
-  │  │  quorum = (total_active_balance / SLOTS_PER_EPOCH) * 60%           │   │
-  │  │                                                                     │   │
-  │  │  if payment.weight >= quorum:                                       │   │
-  │  │      → Move to builder_pending_withdrawals (CONFIRMED!)             │   │
-  │  │      → Set withdrawable_epoch based on exit queue                   │   │
-  │  │  else:                                                              │   │
-  │  │      → Payment DISCARDED (builder keeps their stake!)              │   │
-  │  │                                                                     │   │
-  │  └─────────────────────────────────────────────────────────────────────┘   │
+  │  ┌─────────────────────────────────────────────────────────────────────┐    │
+  │  │                                                                     │    │
+  │  │  quorum = (total_active_balance / SLOTS_PER_EPOCH) * 60%            │    │
+  │  │                                                                     │    │
+  │  │  if payment.weight >= quorum:                                       │    │
+  │  │      → Move to builder_pending_withdrawals (CONFIRMED!)             │    │
+  │  │      → Set withdrawable_epoch based on exit queue                   │    │
+  │  │  else:                                                              │    │
+  │  │      → Payment DISCARDED (builder keeps their stake!)               │    │
+  │  │                                                                     │    │
+  │  └─────────────────────────────────────────────────────────────────────┘    │
   │                                                                             │
   │  WHY 60% QUORUM?                                                            │
   │  ═══════════════                                                            │
@@ -423,11 +423,11 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │  ExecutionPayloadBid {                                              │   │
   │  │                                                                     │   │
-  │  │    ┌─────────────────────┬──────────────────────────────────────┐  │   │
-  │  │    │ parent_block_hash   │ Hash32 - EL parent (for continuity)  │  │   │
-  │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
-  │  │    │ parent_block_root   │ Root - CL parent beacon block        │  │   │
-  │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
+  │  │    ┌─────────────────────┬──────────────────────────────────────┐   │   │
+  │  │    │ parent_block_hash   │ Hash32 - EL parent (for continuity)  │   │   │
+  │  │    ├─────────────────────┼──────────────────────────────────────┤   │   │
+  │  │    │ parent_block_root   │ Root - CL parent beacon block        │   │   │
+  │  │    ├─────────────────────┼──────────────────────────────────────┤   │   │
   │  │    │ block_hash          │ Hash32 - COMMITTED payload hash      │◄─┼───┤
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
   │  │    │ prev_randao         │ Bytes32 - For EL randomness          │  │   │ This
@@ -494,16 +494,16 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │    execution_requests: ExecutionRequests                            │   │
   │  │      • deposits, withdrawals, consolidations (from EL)              │   │
   │  │                                                                     │   │
-  │  │    builder_index: ValidatorIndex   ◄── Must match bid!             │   │
+  │  │    builder_index: ValidatorIndex   ◄── Must match bid!              │   │
   │  │                                                                     │   │
-  │  │    beacon_block_root: Root         ◄── Links to the beacon block   │   │
+  │  │    beacon_block_root: Root         ◄── Links to the beacon block    │   │
   │  │                                                                     │   │
-  │  │    slot: Slot                      ◄── Must match block slot       │   │
+  │  │    slot: Slot                      ◄── Must match block slot        │   │
   │  │                                                                     │   │
-  │  │    blob_kzg_commitments: List[KZGCommitment]                       │   │
-  │  │      ◄── hash_tree_root must match bid.blob_kzg_commitments_root   │   │
+  │  │    blob_kzg_commitments: List[KZGCommitment]                        │   │
+  │  │      ◄── hash_tree_root must match bid.blob_kzg_commitments_root    │   │
   │  │                                                                     │   │
-  │  │    state_root: Root                ◄── Post-state after processing │   │
+  │  │    state_root: Root                ◄── Post-state after processing  │   │
   │  │                                                                     │   │
   │  │  }                                                                  │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -512,12 +512,12 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  ══════════════════                                                         │
   │                                                                             │
   │  BeaconBlock                ExecutionPayloadBid           Envelope          │
-  │  ┌──────────┐               ┌──────────────┐          ┌──────────────┐     │
-  │  │ Contains │──────────────►│ block_hash   │◄─────────│ payload.     │     │
-  │  │ bid      │               │              │  MUST    │ block_hash   │     │
-  │  └──────────┘               │ builder_idx  │◄─MATCH──►│ builder_idx  │     │
-  │                             │ blob_root    │◄─────────│ hash(comms)  │     │
-  │                             └──────────────┘          └──────────────┘     │
+  │  ┌──────────┐               ┌──────────────┐          ┌──────────────┐      │
+  │  │ Contains │──────────────►│ block_hash   │◄─────────│ payload.     │      │
+  │  │ bid      │               │              │  MUST    │ block_hash   │      │
+  │  └──────────┘               │ builder_idx  │◄─MATCH──►│ builder_idx  │      │
+  │                             │ blob_root    │◄─────────│ hash(comms)  │      │
+  │                             └──────────────┘          └──────────────┘      │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -733,38 +733,38 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │                    │ B1  │                                                  │
   │                    └──┬──┘                                                  │
   │                       │                                                     │
-  │              ┌────────┴────────┐                                           │
+  │              ┌────────┴────────┐                                            │
   │              │                 │                                            │
-  │           ┌──┴──┐           ┌──┴──┐                                        │
-  │           │ B2  │           │ B3  │                                        │
-  │           └──┬──┘           └─────┘                                        │
+  │           ┌──┴──┐           ┌──┴──┐                                         │
+  │           │ B2  │           │ B3  │                                         │
+  │           └──┬──┘           └─────┘                                         │
   │              │                                                              │
-  │           ┌──┴──┐                                                          │
-  │           │ B4  │ ◄── HEAD                                                 │
-  │           └─────┘                                                          │
+  │           ┌──┴──┐                                                           │
+  │           │ B4  │ ◄── HEAD                                                  │
+  │           └─────┘                                                           │
   │                                                                             │
-  │  ───────────────────────────────────────────────────────────────────────── │
+  │  ─────────────────────────────────────────────────────────────────────────  │
   │                                                                             │
   │  AFTER: Tree with BOTH block AND payload status                             │
   │  ═════════════════════════════════════════════════                          │
   │                                                                             │
   │  Each block can branch into EMPTY or FULL versions:                         │
   │                                                                             │
-  │                         ┌─────────────┐                                    │
-  │                         │ B1 (PENDING)│                                    │
-  │                         └──────┬──────┘                                    │
+  │                         ┌─────────────┐                                     │
+  │                         │ B1 (PENDING)│                                     │
+  │                         └──────┬──────┘                                     │
   │                                │                                            │
-  │                 ┌──────────────┴──────────────┐                            │
+  │                 ┌──────────────┴──────────────┐                             │
   │                 │                             │                             │
-  │          ┌──────┴──────┐              ┌───────┴──────┐                     │
-  │          │ B1 (EMPTY)  │              │ B1 (FULL)    │                     │
-  │          │ No payload  │              │ Has payload  │                     │
-  │          └──────┬──────┘              └───────┬──────┘                     │
+  │          ┌──────┴──────┐              ┌───────┴──────┐                      │
+  │          │ B1 (EMPTY)  │              │ B1 (FULL)    │                      │
+  │          │ No payload  │              │ Has payload  │                      │
+  │          └──────┬──────┘              └───────┬──────┘                      │
   │                 │                             │                             │
-  │          ┌──────┴──────┐              ┌───────┴──────┐                     │
-  │          │ B2 builds   │              │ B2 builds    │                     │
-  │          │ on EMPTY B1 │              │ on FULL B1   │                     │
-  │          └─────────────┘              └──────────────┘                     │
+  │          ┌──────┴──────┐              ┌───────┴──────┐                      │
+  │          │ B2 builds   │              │ B2 builds    │                      │
+  │          │ on EMPTY B1 │              │ on FULL B1   │                      │
+  │          └─────────────┘              └──────────────┘                      │
   │                                                                             │
   │  THE ForkChoiceNode STRUCTURE:                                              │
   │  ════════════════════════════                                               │
@@ -792,7 +792,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │        head = child with max(weight)                                        │
   │    return head                                                              │
   │                                                                             │
-  │  ───────────────────────────────────────────────────────────────────────── │
+  │  ─────────────────────────────────────────────────────────────────────────  │
   │                                                                             │
   │  AFTER: Navigate BOTH block tree AND payload status                         │
   │  ═══════════════════════════════════════════════════                        │
@@ -883,12 +883,12 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │   │                                                                 │   │
   │  │   │ 0%: Block proposed                                              │   │
   │  │   │ ~5-10%: Payload might arrive                                    │   │
-  │  │   │ 25%: Attestation deadline ◄── Most attesters haven't seen      │   │
+  │  │   │ 25%: Attestation deadline ◄── Most attesters haven't seen       │   │
   │  │   │                               payload yet, so index MUST be 0   │   │
   │  │   │ 75%: PTC deadline                                               │   │
   │  │   │                                                                 │   │
   │  │   Slot N+1                                                          │   │
-  │  │   │ 25%: Attestation deadline ◄── NOW attesters can signal         │   │
+  │  │   │ 25%: Attestation deadline ◄── NOW attesters can signal          │   │
   │  │   │                               index=0 (EMPTY) or index=1 (FULL) │   │
   │  │                                   based on what they saw            │   │
   │  │                                                                     │   │
@@ -1063,16 +1063,16 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │    Builder ───execution_payload_bid───► Network ───► Proposer               │
   │                (commitment)                              │                  │
   │                                                          │                  │
-  │    Proposer ───beacon_block────────────► Network        │                  │
+  │    Proposer ───beacon_block────────────► Network         │                  │
   │              (small, contains bid)                       │                  │
   │                                                          │                  │
-  │    Builder ◄─────────────────────────────────────────────┘                 │
+  │    Builder ◄─────────────────────────────────────────────┘                  │
   │         │    (sees block)                                                   │
   │         │                                                                   │
-  │         └──execution_payload─────────► Network ───► All nodes              │
+  │         └──execution_payload─────────► Network ───► All nodes               │
   │            (actual payload)                                                 │
   │                                                                             │
-  │    PTC ────payload_attestation_message──► Network ───► Next proposer       │
+  │    PTC ────payload_attestation_message──► Network ───► Next proposer        │
   │         (votes on payload timeliness)                                       │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
@@ -1107,16 +1107,16 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │ REJECT if:                                                          │   │
-  │  │   • Referenced block doesn't pass validation                       │   │
-  │  │   • slot doesn't match block.slot                                  │   │
-  │  │   • builder_index doesn't match bid.builder_index                  │   │
-  │  │   • payload.block_hash doesn't match bid.block_hash                │   │
-  │  │   • signature is invalid                                           │   │
+  │  │   • Referenced block doesn't pass validation                        │   │
+  │  │   • slot doesn't match block.slot                                   │   │
+  │  │   • builder_index doesn't match bid.builder_index                   │   │
+  │  │   • payload.block_hash doesn't match bid.block_hash                 │   │
+  │  │   • signature is invalid                                            │   │
   │  │                                                                     │   │
   │  │ IGNORE if:                                                          │   │
-  │  │   • beacon_block_root not yet seen                                 │   │
-  │  │   • Already seen valid envelope for this block from this builder   │   │
-  │  │   • slot < finalized slot                                          │   │
+  │  │   • beacon_block_root not yet seen                                  │   │
+  │  │   • Already seen valid envelope for this block from this builder    │   │
+  │  │   • slot < finalized slot                                           │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
   │  payload_attestation_message                                                │
@@ -1181,7 +1181,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
-  │  │  def verify_data_column_sidecar(sidecar):                          │   │
+  │  │  def verify_data_column_sidecar(sidecar):                           │   │
   │  │      # Index must be valid                                          │   │
   │  │      if sidecar.index >= NUMBER_OF_COLUMNS: return False            │   │
   │  │                                                                     │   │
@@ -1219,15 +1219,15 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  Protocol: /eth2/beacon_chain/req/execution_payload_envelopes_by_range/1/   │
   │                                                                             │
   │  Request:                          Response:                                │
-  │  ┌────────────────────┐            ┌────────────────────────────────────┐  │
-  │  │ start_slot: Slot   │ ──────────►│ List[SignedExecutionPayloadEnvelope│  │
-  │  │ count: uint64      │            │      MAX_REQUEST_BLOCKS_DENEB]     │  │
-  │  └────────────────────┘            └────────────────────────────────────┘  │
+  │  ┌────────────────────┐            ┌────────────────────────────────────┐   │
+  │  │ start_slot: Slot   │ ──────────►│ List[SignedExecutionPayloadEnvelope│   │
+  │  │ count: uint64      │            │      MAX_REQUEST_BLOCKS_DENEB]     │   │
+  │  └────────────────────┘            └────────────────────────────────────┘   │
   │                                                                             │
   │  Use case: Syncing execution payloads for a range of slots                  │
   │            (like BeaconBlocksByRange, but for payloads)                     │
   │                                                                             │
-  │  ───────────────────────────────────────────────────────────────────────── │
+  │  ─────────────────────────────────────────────────────────────────────────  │
   │                                                                             │
   │  ExecutionPayloadEnvelopesByRoot v1 ✨ NEW                                  │
   │  ═════════════════════════════════════════                                  │
@@ -1599,98 +1599,98 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  SLOT N-1 (Preparation)                                                     │
   │  ══════════════════════                                                     │
   │                                                                             │
-  │      ┌──────────┐                                                          │
+  │      ┌──────────┐                                                           │
   │      │ BUILDER  │ Constructs payload, creates bid                           │
-  │      └────┬─────┘                                                          │
+  │      └────┬─────┘                                                           │
   │           │                                                                 │
   │           │ SignedExecutionPayloadBid                                       │
   │           │ (via P2P or direct to proposer)                                 │
   │           ▼                                                                 │
-  │      ┌──────────┐                                                          │
-  │      │ PROPOSER │ Receives and stores best bids                            │
-  │      └──────────┘                                                          │
+  │      ┌──────────┐                                                           │
+  │      │ PROPOSER │ Receives and stores best bids                             │
+  │      └──────────┘                                                           │
   │                                                                             │
   │  SLOT N: 0% (0 seconds) - BLOCK PROPOSAL                                    │
   │  ═══════════════════════════════════════                                    │
   │                                                                             │
-  │      ┌──────────┐                                                          │
-  │      │ PROPOSER │                                                          │
-  │      └────┬─────┘                                                          │
+  │      ┌──────────┐                                                           │
+  │      │ PROPOSER │                                                           │
+  │      └────┬─────┘                                                           │
   │           │ Creates BeaconBlock containing:                                 │
   │           │ • Selected bid (signed_execution_payload_bid)                   │
   │           │ • Payload attestations from slot N-1                            │
   │           │                                                                 │
   │           │ SignedBeaconBlock                                               │
   │           ▼                                                                 │
-  │     ┌─────────────────────────────────────────────────────────────────┐    │
-  │     │                         P2P NETWORK                             │    │
-  │     │                     "beacon_block" topic                        │    │
-  │     └─────────────────────────────────────────────────────────────────┘    │
-  │           │                   │                   │                        │
-  │           ▼                   ▼                   ▼                        │
-  │      ┌─────────┐        ┌──────────┐        ┌───────────┐                 │
-  │      │ BUILDER │        │VALIDATORS│        │   NODES   │                 │
-  │      │ (sees   │        │(store    │        │ (add to   │                 │
-  │      │ their   │        │ block)   │        │ fork      │                 │
-  │      │ bid!)   │        │          │        │ choice)   │                 │
-  │      └────┬────┘        └──────────┘        └───────────┘                 │
+  │     ┌─────────────────────────────────────────────────────────────────┐     │
+  │     │                         P2P NETWORK                             │     │
+  │     │                     "beacon_block" topic                        │     │
+  │     └─────────────────────────────────────────────────────────────────┘     │
+  │           │                   │                   │                         │
+  │           ▼                   ▼                   ▼                         │
+  │      ┌─────────┐        ┌──────────┐        ┌───────────┐                   │
+  │      │ BUILDER │        │VALIDATORS│        │   NODES   │                   │
+  │      │ (sees   │        │(store    │        │ (add to   │                   │
+  │      │ their   │        │ block)   │        │ fork      │                   │
+  │      │ bid!)   │        │          │        │ choice)   │                   │
+  │      └────┬────┘        └──────────┘        └───────────┘                   │
   │           │                                                                 │
-  │  SLOT N: ~5-15% - PAYLOAD REVEAL                                           │
-  │  ═══════════════════════════════                                           │
+  │  SLOT N: ~5-15% - PAYLOAD REVEAL                                            │
+  │  ═══════════════════════════════                                            │
   │                                                                             │
   │           │ SignedExecutionPayloadEnvelope                                  │
   │           │ + DataColumnSidecars (if blobs)                                 │
   │           ▼                                                                 │
-  │     ┌─────────────────────────────────────────────────────────────────┐    │
-  │     │                         P2P NETWORK                             │    │
-  │     │              "execution_payload" + "data_column_sidecar_*"      │    │
-  │     └─────────────────────────────────────────────────────────────────┘    │
-  │           │                   │                   │                        │
-  │           ▼                   ▼                   ▼                        │
-  │      ┌─────────┐        ┌──────────┐        ┌───────────┐                 │
-  │      │   PTC   │        │VALIDATORS│        │   NODES   │                 │
-  │      │(waiting │        │(waiting  │        │ (process  │                 │
-  │      │ to vote)│        │ to vote) │        │ payload)  │                 │
-  │      └─────────┘        └──────────┘        └───────────┘                 │
+  │     ┌─────────────────────────────────────────────────────────────────┐     │
+  │     │                         P2P NETWORK                             │     │
+  │     │              "execution_payload" + "data_column_sidecar_*"      │     │
+  │     └─────────────────────────────────────────────────────────────────┘     │
+  │           │                   │                   │                         │
+  │           ▼                   ▼                   ▼                         │
+  │      ┌─────────┐        ┌──────────┐        ┌───────────┐                   │
+  │      │   PTC   │        │VALIDATORS│        │   NODES   │                   │
+  │      │(waiting │        │(waiting  │        │ (process  │                   │
+  │      │ to vote)│        │ to vote) │        │ payload)  │                   │
+  │      └─────────┘        └──────────┘        └───────────┘                   │
   │                                                                             │
-  │  SLOT N: 25% (3 seconds) - ATTESTATION DEADLINE                            │
-  │  ═══════════════════════════════════════════════                           │
+  │  SLOT N: 25% (3 seconds) - ATTESTATION DEADLINE                             │
+  │  ═══════════════════════════════════════════════                            │
   │                                                                             │
-  │      ┌──────────┐                                                          │
-  │      │VALIDATORS│                                                          │
-  │      └────┬─────┘                                                          │
+  │      ┌──────────┐                                                           │
+  │      │VALIDATORS│                                                           │
+  │      └────┬─────┘                                                           │
   │           │ Attestations with index=0 (same slot)                           │
   │           │ or index=0/1 (if attesting to prev slot based on payload)       │
   │           ▼                                                                 │
-  │     ┌─────────────────────────────────────────────────────────────────┐    │
-  │     │                         P2P NETWORK                             │    │
-  │     │                  "beacon_attestation_*" topics                  │    │
-  │     └─────────────────────────────────────────────────────────────────┘    │
+  │     ┌─────────────────────────────────────────────────────────────────┐     │
+  │     │                         P2P NETWORK                             │     │
+  │     │                  "beacon_attestation_*" topics                  │     │
+  │     └─────────────────────────────────────────────────────────────────┘     │
   │                                                                             │
-  │  SLOT N: 75% (9 seconds) - PTC DEADLINE                                    │
-  │  ══════════════════════════════════════                                    │
+  │  SLOT N: 75% (9 seconds) - PTC DEADLINE                                     │
+  │  ══════════════════════════════════════                                     │
   │                                                                             │
-  │      ┌──────────┐                                                          │
-  │      │   PTC    │ 512 validators vote on payload timeliness                │
-  │      │ (512     │                                                          │
-  │      │ members) │                                                          │
-  │      └────┬─────┘                                                          │
+  │      ┌──────────┐                                                           │
+  │      │   PTC    │ 512 validators vote on payload timeliness                 │
+  │      │ (512     │                                                           │
+  │      │ members) │                                                           │
+  │      └────┬─────┘                                                           │
   │           │ PayloadAttestationMessage                                       │
   │           │ (payload_present = true/false)                                  │
   │           ▼                                                                 │
-  │     ┌─────────────────────────────────────────────────────────────────┐    │
-  │     │                         P2P NETWORK                             │    │
-  │     │               "payload_attestation_message" topic               │    │
-  │     └─────────────────────────────────────────────────────────────────┘    │
+  │     ┌─────────────────────────────────────────────────────────────────┐     │
+  │     │                         P2P NETWORK                             │     │
+  │     │               "payload_attestation_message" topic               │     │
+  │     └─────────────────────────────────────────────────────────────────┘     │
   │           │                                                                 │
   │           ▼                                                                 │
-  │      ┌──────────────┐                                                      │
-  │      │ NEXT PROPOSER│ Collects and aggregates PTC messages                 │
-  │      │ (slot N+1)   │ for inclusion in their block                         │
-  │      └──────────────┘                                                      │
+  │      ┌──────────────┐                                                       │
+  │      │ NEXT PROPOSER│ Collects and aggregates PTC messages                  │
+  │      │ (slot N+1)   │ for inclusion in their block                          │
+  │      └──────────────┘                                                       │
   │                                                                             │
-  │  SLOT N+1: 0% - NEXT BLOCK                                                 │
-  │  ═════════════════════════                                                 │
+  │  SLOT N+1: 0% - NEXT BLOCK                                                  │
+  │  ═════════════════════════                                                  │
   │                                                                             │
   │      Next block contains:                                                   │
   │      • payload_attestations (aggregated from slot N)                        │
@@ -1700,20 +1700,20 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  EPOCH BOUNDARY - PAYMENT PROCESSING                                        │
   │  ═══════════════════════════════════                                        │
   │                                                                             │
-  │      ┌──────────────────────────────────────────────────────────────────┐  │
-  │      │                                                                  │  │
-  │      │  For each pending_payment from previous epoch:                   │  │
-  │      │                                                                  │  │
-  │      │    if payment.weight >= quorum (60% of per-slot stake):          │  │
-  │      │        → Move to builder_pending_withdrawals                     │  │
-  │      │        → Set withdrawable_epoch                                  │  │
-  │      │        → Builder will pay proposer!                              │  │
-  │      │    else:                                                         │  │
-  │      │        → Discard payment                                         │  │
-  │      │        → Builder keeps stake                                     │  │
-  │      │        → (Maybe attack detected, or network issues)              │  │
-  │      │                                                                  │  │
-  │      └──────────────────────────────────────────────────────────────────┘  │
+  │      ┌──────────────────────────────────────────────────────────────────┐   │
+  │      │                                                                  │   │
+  │      │  For each pending_payment from previous epoch:                   │   │
+  │      │                                                                  │   │
+  │      │    if payment.weight >= quorum (60% of per-slot stake):          │   │
+  │      │        → Move to builder_pending_withdrawals                     │   │
+  │      │        → Set withdrawable_epoch                                  │   │
+  │      │        → Builder will pay proposer!                              │   │
+  │      │    else:                                                         │   │
+  │      │        → Discard payment                                         │   │
+  │      │        → Builder keeps stake                                     │   │
+  │      │        → (Maybe attack detected, or network issues)              │   │
+  │      │                                                                  │   │
+  │      └──────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -1783,43 +1783,43 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │                    WHICH FILE COVERS WHAT?                                  │
   ├─────────────────────────────────────────────────────────────────────────────┤
   │                                                                             │
-  │  ┌───────────────────┬──────────────────────────────────────────────────┐  │
-  │  │ File              │ Key Concepts                                     │  │
-  │  ├───────────────────┼──────────────────────────────────────────────────┤  │
-  │  │ beacon-chain.md   │ • All new containers (Bid, Envelope, PTC types)  │  │
-  │  │ (same as gloas.md)│ • Modified BeaconState and BeaconBlockBody       │  │
-  │  │                   │ • State transition (process_block, etc.)         │  │
-  │  │                   │ • Payment quorum and withdrawal logic            │  │
-  │  │                   │ • Builder credentials (0x03 prefix)              │  │
-  │  ├───────────────────┼──────────────────────────────────────────────────┤  │
-  │  │ fork-choice.md    │ • PayloadStatus (PENDING/EMPTY/FULL)             │  │
-  │  │                   │ • ForkChoiceNode with payload tracking           │  │
-  │  │                   │ • Modified get_head() algorithm                  │  │
-  │  │                   │ • on_execution_payload handler                   │  │
-  │  │                   │ • PTC vote tracking (is_payload_timely)          │  │
-  │  │                   │ • Attestation index interpretation               │  │
-  │  ├───────────────────┼──────────────────────────────────────────────────┤  │
-  │  │ p2p-interface.md  │ • New gossip topics (bid, payload, PTC)          │  │
-  │  │                   │ • Validation rules for each message type         │  │
-  │  │                   │ • Modified DataColumnSidecar structure           │  │
-  │  │                   │ • New req/resp methods for payloads              │  │
-  │  ├───────────────────┼──────────────────────────────────────────────────┤  │
-  │  │ validator.md      │ • New timing parameters (earlier deadlines)      │  │
-  │  │                   │ • PTC assignment and voting workflow             │  │
-  │  │                   │ • How to construct payload_attestations          │  │
-  │  │                   │ • Modified block proposal (select bid)           │  │
-  │  │                   │ • Attestation index signaling                    │  │
-  │  ├───────────────────┼──────────────────────────────────────────────────┤  │
-  │  │ builder.md        │ • How to become a builder (0x03 credentials)     │  │
-  │  │                   │ • Bid construction workflow                      │  │
-  │  │                   │ • Payload envelope construction                  │  │
-  │  │                   │ • DataColumnSidecar creation                     │  │
-  │  │                   │ • Honest withholding (when to not reveal)        │  │
-  │  ├───────────────────┼──────────────────────────────────────────────────┤  │
-  │  │ fork.md           │ • GLOAS_FORK_VERSION and GLOAS_FORK_EPOCH        │  │
-  │  │                   │ • upgrade_to_gloas() function                    │  │
-  │  │                   │ • State migration from Fulu                      │  │
-  │  └───────────────────┴──────────────────────────────────────────────────┘  │
+  │  ┌───────────────────┬──────────────────────────────────────────────────┐   │
+  │  │ File              │ Key Concepts                                     │   │
+  │  ├───────────────────┼──────────────────────────────────────────────────┤   │
+  │  │ beacon-chain.md   │ • All new containers (Bid, Envelope, PTC types)  │   │
+  │  │ (same as gloas.md)│ • Modified BeaconState and BeaconBlockBody       │   │
+  │  │                   │ • State transition (process_block, etc.)         │   │
+  │  │                   │ • Payment quorum and withdrawal logic            │   │
+  │  │                   │ • Builder credentials (0x03 prefix)              │   │
+  │  ├───────────────────┼──────────────────────────────────────────────────┤   │
+  │  │ fork-choice.md    │ • PayloadStatus (PENDING/EMPTY/FULL)             │   │
+  │  │                   │ • ForkChoiceNode with payload tracking           │   │
+  │  │                   │ • Modified get_head() algorithm                  │   │
+  │  │                   │ • on_execution_payload handler                   │   │
+  │  │                   │ • PTC vote tracking (is_payload_timely)          │   │
+  │  │                   │ • Attestation index interpretation               │   │
+  │  ├───────────────────┼──────────────────────────────────────────────────┤   │
+  │  │ p2p-interface.md  │ • New gossip topics (bid, payload, PTC)          │   │
+  │  │                   │ • Validation rules for each message type         │   │
+  │  │                   │ • Modified DataColumnSidecar structure           │   │
+  │  │                   │ • New req/resp methods for payloads              │   │
+  │  ├───────────────────┼──────────────────────────────────────────────────┤   │
+  │  │ validator.md      │ • New timing parameters (earlier deadlines)      │   │
+  │  │                   │ • PTC assignment and voting workflow             │   │
+  │  │                   │ • How to construct payload_attestations          │   │
+  │  │                   │ • Modified block proposal (select bid)           │   │
+  │  │                   │ • Attestation index signaling                    │   │
+  │  ├───────────────────┼──────────────────────────────────────────────────┤   │
+  │  │ builder.md        │ • How to become a builder (0x03 credentials)     │   │
+  │  │                   │ • Bid construction workflow                      │   │
+  │  │                   │ • Payload envelope construction                  │   │
+  │  │                   │ • DataColumnSidecar creation                     │   │
+  │  │                   │ • Honest withholding (when to not reveal)        │   │
+  │  ├───────────────────┼──────────────────────────────────────────────────┤   │
+  │  │ fork.md           │ • GLOAS_FORK_VERSION and GLOAS_FORK_EPOCH        │   │
+  │  │                   │ • upgrade_to_gloas() function                    │   │
+  │  │                   │ • State migration from Fulu                      │   │
+  │  └───────────────────┴──────────────────────────────────────────────────┘   │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 

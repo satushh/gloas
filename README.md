@@ -455,7 +455,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
   │  │    │ value               │ Gwei - PAYMENT to proposer           │◄─┼───┤
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
-  │  │    │ execution_payment   │ Gwei - Must be non-zero (see spec)   │  │   │
+  │  │    │ execution_payment   │ Gwei - Non-zero for gossip acceptance│  │   │
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
   │  │    │ blob_kzg_commitments│ Root - Hash of blob commitments      │  │   │
   │  │    │ _root               │                                      │  │   │
@@ -604,8 +604,8 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │   └─► Which slot?       │                  │       ationData         │  │
   │  │                         │                  │                         │  │
   │  │ payload_present: bool   │◄────────────────►│ signature: BLSSignature │  │
-  │  │   └─► Did payload       │   included in    │   └─► Signed by voter   │  │
-  │  │       arrive on time?   │                  │                         │  │
+  │  │   └─► Was payload       │   included in    │   └─► Signed by voter   │  │
+  │  │       seen?             │                  │                         │  │
   │  │                         │                  └─────────────────────────┘  │
   │  │ blob_data_available:    │                          │                    │
   │  │   bool                  │                          │ Individual votes   │

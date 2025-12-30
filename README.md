@@ -745,7 +745,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │                        ▼                               ▼                    │
   │              ┌─────────────────┐             ┌─────────────────┐           │
   │              │ Payload arrives │             │ Payload doesn't │           │
-  │              │ and validates   │             │ arrive (timeout)│           │
+  │              │ and validates   │             │ arrive/unknown │           │
   │              │                 │             │                 │           │
   │              │ PAYLOAD_STATUS_ │             │ PAYLOAD_STATUS_ │           │
   │              │ FULL            │             │ EMPTY           │           │
@@ -1039,8 +1039,16 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │      state = store.block_states[data.beacon_block_root]             │   │
   │  │      ptc = get_ptc(state, data.slot)                                │   │
   │  │                                                                     │   │
+  │  │      # Ignore if not for the block's slot                           │   │
+  │  │      if data.slot != state.slot: return                             │   │
+  │  │                                                                     │   │
   │  │      # Verify the validator is in the PTC                           │   │
   │  │      assert msg.validator_index in ptc                              │   │
+  │  │                                                                     │   │
+  │  │      # If from wire, ensure current slot and verify signature       │   │
+  │  │      if not is_from_block:                                          │   │
+  │  │          assert data.slot == get_current_slot(store)                │   │
+  │  │          assert is_valid_indexed_payload_attestation(...)           │   │
   │  │                                                                     │   │
   │  │      # Update the PTC vote tracking                                 │   │
   │  │      ptc_index = ptc.index(msg.validator_index)                     │   │

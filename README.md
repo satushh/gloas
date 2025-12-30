@@ -314,8 +314,11 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
           │                     │              │ ATTEST to   │            │
           │                     │              │ block with  │            │
           │                     │              │ index field:│            │
-          │                     │              │ • 0 = empty │            │
-          │                     │              │ • 1 = full  │            │
+          │                     │              │ • same-slot:│            │
+          │                     │              │   index = 0 │            │
+          │                     │              │ • prior-slot│            │
+          │                     │              │   0=empty   │            │
+          │                     │              │   1=full    │            │
           │                     │              └──────┬──────┘            │
           │                     │                     │                   │
           │                     │                     ▼                   │
@@ -410,7 +413,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  BUILDER_PAYMENT_THRESHOLD_DENOMINATOR = 10                                 │
   │                                                                             │
   │  This ensures payments only go through when there's strong consensus        │
-  │  that the block+payload were actually received and valid.                   │
+  │  that the block was actually received and valid.                            │
   │                                                                             │
   │  AFTER withdrawable_epoch: Actual ETH Transfer                              │
   │  ═════════════════════════════════════════════                              │

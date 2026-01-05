@@ -1942,308 +1942,296 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
 
 ## 9. SPEC REFERENCE INDEX
 
-Quick lookup for constants, containers, and functions defined in the GLOAS specs.
+Quick lookup for constants, containers, and functions defined in the GLOAS specs. Each entry includes a brief description of its purpose.
 
 ### 9.1 Constants
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              CONSTANTS                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  beacon-chain.md - Domain Types                                              │
-│  ───────────────────────────────                                             │
-│  DOMAIN_BEACON_BUILDER              DomainType('0x0B000000')                 │
-│  DOMAIN_PTC_ATTESTER                DomainType('0x0C000000')                 │
-│                                                                              │
-│  beacon-chain.md - Misc                                                      │
-│  ─────────────────────                                                       │
-│  BUILDER_PAYMENT_THRESHOLD_NUMERATOR      uint64(6)                          │
-│  BUILDER_PAYMENT_THRESHOLD_DENOMINATOR    uint64(10)                         │
-│                                                                              │
-│  beacon-chain.md - Withdrawal Prefixes                                       │
-│  ─────────────────────────────────────                                       │
-│  BUILDER_WITHDRAWAL_PREFIX          Bytes1('0x03')                           │
-│                                                                              │
-│  beacon-chain.md - Preset                                                    │
-│  ────────────────────────                                                    │
-│  PTC_SIZE                           uint64(512)                              │
-│  MAX_PAYLOAD_ATTESTATIONS           4                                        │
-│  BUILDER_PENDING_WITHDRAWALS_LIMIT  uint64(1,048,576)                        │
-│                                                                              │
-│  fork-choice.md - Constants                                                  │
-│  ──────────────────────────                                                  │
-│  PAYLOAD_TIMELY_THRESHOLD           PTC_SIZE // 2 (= 256)                    │
-│  PAYLOAD_STATUS_PENDING             PayloadStatus(0)                         │
-│  PAYLOAD_STATUS_EMPTY               PayloadStatus(1)                         │
-│  PAYLOAD_STATUS_FULL                PayloadStatus(2)                         │
-│                                                                              │
-│  validator.md - Time Parameters                                              │
-│  ──────────────────────────────                                              │
-│  ATTESTATION_DUE_BPS_GLOAS          uint64(2500)  (25% = 3s)                 │
-│  AGGREGATE_DUE_BPS_GLOAS            uint64(5000)  (50% = 6s)                 │
-│  SYNC_MESSAGE_DUE_BPS_GLOAS         uint64(2500)  (25% = 3s)                 │
-│  CONTRIBUTION_DUE_BPS_GLOAS         uint64(5000)  (50% = 6s)                 │
-│  PAYLOAD_ATTESTATION_DUE_BPS        uint64(7500)  (75% = 9s)                 │
-│                                                                              │
-│  p2p-interface.md - Configuration                                            │
-│  ────────────────────────────────                                            │
-│  MAX_REQUEST_PAYLOADS               uint64(128)                              │
-│                                                                              │
-│  fork.md - Configuration                                                     │
-│  ───────────────────────                                                     │
-│  GLOAS_FORK_VERSION                 Version('0x07000000')                    │
-│  GLOAS_FORK_EPOCH                   TBD                                      │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+#### beacon-chain.md - Domain Types
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `DOMAIN_BEACON_BUILDER` | `DomainType('0x0B000000')` | Domain for signing builder-related messages (bids and payload envelopes). Separates builder signatures from other validator duties. |
+| `DOMAIN_PTC_ATTESTER` | `DomainType('0x0C000000')` | Domain for signing payload attestation messages. Used by PTC members when voting on payload timeliness. |
+
+#### beacon-chain.md - Misc
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `BUILDER_PAYMENT_THRESHOLD_NUMERATOR` | `uint64(6)` | Numerator for the 60% quorum threshold. Builder payments only execute if same-slot attestations representing 60% of expected weight are received. |
+| `BUILDER_PAYMENT_THRESHOLD_DENOMINATOR` | `uint64(10)` | Denominator for the 60% quorum threshold. Combined with numerator: 6/10 = 60% of per-slot balance required for payment. |
+
+#### beacon-chain.md - Withdrawal Prefixes
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `BUILDER_WITHDRAWAL_PREFIX` | `Bytes1('0x03')` | Withdrawal credential prefix identifying a validator as a builder. Builders use 0x03 prefix (vs 0x01 for BLS, 0x02 for compounding). Enables non-self-build bids. |
+
+#### beacon-chain.md - Preset
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `PTC_SIZE` | `uint64(512)` | Number of validators in the Payload Timeliness Committee per slot. Selected via balance-weighted sampling from that slot's attestation committees. |
+| `MAX_PAYLOAD_ATTESTATIONS` | `4` | Maximum number of aggregated payload attestations that can be included in a beacon block. Limits block size while allowing sufficient coverage. |
+| `BUILDER_PENDING_WITHDRAWALS_LIMIT` | `uint64(1,048,576)` | Maximum pending builder withdrawals in the state. Large limit (~1M) accommodates high throughput without state bloat concerns. |
+
+#### fork-choice.md - Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `PAYLOAD_TIMELY_THRESHOLD` | `PTC_SIZE // 2` (= 256) | Minimum PTC votes needed to consider a payload "timely". If >256 of 512 PTC members vote present, the payload is considered delivered on time. |
+| `PAYLOAD_STATUS_PENDING` | `PayloadStatus(0)` | Fork choice status for a beacon block whose payload hasn't been resolved yet. Transitional state before becoming EMPTY or FULL. |
+| `PAYLOAD_STATUS_EMPTY` | `PayloadStatus(1)` | Fork choice status indicating the execution payload was NOT delivered. The beacon block exists but has no corresponding execution data. |
+| `PAYLOAD_STATUS_FULL` | `PayloadStatus(2)` | Fork choice status indicating the execution payload WAS delivered and validated. The block is complete with both consensus and execution layers. |
+
+#### validator.md - Time Parameters
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `ATTESTATION_DUE_BPS_GLOAS` | `uint64(2500)` (25% = 3s) | Attestation deadline in GLOAS (earlier than pre-GLOAS 33%). Moved earlier to give builders more time to construct and broadcast payloads. |
+| `AGGREGATE_DUE_BPS_GLOAS` | `uint64(5000)` (50% = 6s) | Aggregation deadline in GLOAS. Aggregators collect attestations and publish aggregates by the halfway point of the slot. |
+| `SYNC_MESSAGE_DUE_BPS_GLOAS` | `uint64(2500)` (25% = 3s) | Sync committee message deadline in GLOAS. Aligned with attestation deadline for consistency. |
+| `CONTRIBUTION_DUE_BPS_GLOAS` | `uint64(5000)` (50% = 6s) | Sync committee contribution deadline in GLOAS. Aligned with aggregation deadline for consistency. |
+| `PAYLOAD_ATTESTATION_DUE_BPS` | `uint64(7500)` (75% = 9s) | PTC attestation deadline. PTC members vote on payload availability at 75% of slot, giving builders maximum time to reveal. |
+
+#### p2p-interface.md - Configuration
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `MAX_REQUEST_PAYLOADS` | `uint64(128)` | Maximum execution payload envelopes requestable in a single req/resp call. Limits bandwidth while allowing efficient syncing. |
+
+#### fork.md - Configuration
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `GLOAS_FORK_VERSION` | `Version('0x07000000')` | Fork version identifier for GLOAS. Used in domain separation and fork digest calculations. |
+| `GLOAS_FORK_EPOCH` | `TBD` | Epoch at which GLOAS activates. To be determined based on testnet results and community coordination. |
 
 ### 9.2 Containers
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              CONTAINERS                                      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  beacon-chain.md - New Containers                                            │
-│  ────────────────────────────────                                            │
-│  BuilderPendingPayment         { weight, withdrawal }                        │
-│  BuilderPendingWithdrawal      { fee_recipient, amount, builder_index,       │
-│                                  withdrawable_epoch }                        │
-│  PayloadAttestationData        { beacon_block_root, slot, payload_present,   │
-│                                  blob_data_available }                       │
-│  PayloadAttestation            { aggregation_bits, data, signature }         │
-│  PayloadAttestationMessage     { validator_index, data, signature }          │
-│  IndexedPayloadAttestation     { attesting_indices, data, signature }        │
-│  ExecutionPayloadBid           { parent_block_hash, parent_block_root,       │
-│                                  block_hash, prev_randao, fee_recipient,     │
-│                                  gas_limit, builder_index, slot, value,      │
-│                                  execution_payment, blob_kzg_commitments_root }│
-│  SignedExecutionPayloadBid     { message, signature }                        │
-│  ExecutionPayloadEnvelope      { payload, execution_requests, builder_index, │
-│                                  beacon_block_root, slot,                    │
-│                                  blob_kzg_commitments, state_root }          │
-│  SignedExecutionPayloadEnvelope { message, signature }                       │
-│                                                                              │
-│  beacon-chain.md - Modified Containers                                       │
-│  ─────────────────────────────────────                                       │
-│  BeaconBlockBody               + signed_execution_payload_bid                │
-│                                + payload_attestations                        │
-│                                - execution_payload                           │
-│                                - blob_kzg_commitments                        │
-│                                - execution_requests                          │
-│  BeaconState                   + latest_execution_payload_bid                │
-│                                + execution_payload_availability              │
-│                                + builder_pending_payments                    │
-│                                + builder_pending_withdrawals                 │
-│                                + latest_block_hash                           │
-│                                + payload_expected_withdrawals                │
-│                                - latest_execution_payload_header             │
-│                                                                              │
-│  fork-choice.md - New/Modified                                               │
-│  ─────────────────────────────                                               │
-│  ForkChoiceNode                { root, payload_status }                      │
-│  LatestMessage                 { slot, root, payload_present }               │
-│  Store                         + execution_payload_states                    │
-│                                + ptc_vote                                    │
-│                                                                              │
-│  p2p-interface.md - Modified                                                 │
-│  ───────────────────────────                                                 │
-│  DataColumnSidecar             + slot                                        │
-│                                + beacon_block_root                           │
-│                                - signed_block_header                         │
-│                                - kzg_commitments_inclusion_proof             │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+#### beacon-chain.md - New Containers
+
+| Container | Fields | Description |
+|-----------|--------|-------------|
+| `BuilderPendingPayment` | `weight`, `withdrawal` | Tracks a payment waiting for quorum confirmation. `weight` accumulates as same-slot attestations arrive; `withdrawal` holds the payment details to execute once quorum is reached. |
+| `BuilderPendingWithdrawal` | `fee_recipient`, `amount`, `builder_index`, `withdrawable_epoch` | A confirmed payment queued for withdrawal. Created when quorum is reached; processed during withdrawal sweep after `withdrawable_epoch`. |
+| `PayloadAttestationData` | `beacon_block_root`, `slot`, `payload_present`, `blob_data_available` | Data signed by PTC members. Indicates whether the voter saw the payload (`payload_present`) and blob data (`blob_data_available`) for a specific beacon block. |
+| `PayloadAttestation` | `aggregation_bits`, `data`, `signature` | Aggregated payload attestation included in blocks. `aggregation_bits` indicates which PTC members are included in this aggregate signature. |
+| `PayloadAttestationMessage` | `validator_index`, `data`, `signature` | Individual (non-aggregated) payload attestation from a single PTC member. Gossiped on p2p network, then aggregated for block inclusion. |
+| `IndexedPayloadAttestation` | `attesting_indices`, `data`, `signature` | Payload attestation with explicit validator indices (vs bitfield). Used internally for signature verification and slashing evidence. |
+| `ExecutionPayloadBid` | `parent_block_hash`, `parent_block_root`, `block_hash`, `prev_randao`, `fee_recipient`, `gas_limit`, `builder_index`, `slot`, `value`, `execution_payment`, `blob_kzg_commitments_root` | Builder's commitment to build a specific payload. Contains enough information to verify the payload matches when revealed. `value` is the payment to proposer; `execution_payment` is the unconditional fee. |
+| `SignedExecutionPayloadBid` | `message`, `signature` | Signed wrapper around `ExecutionPayloadBid`. Builder signs with their withdrawal credential key (0x03 prefix). |
+| `ExecutionPayloadEnvelope` | `payload`, `execution_requests`, `builder_index`, `beacon_block_root`, `slot`, `blob_kzg_commitments`, `state_root` | Container for the revealed execution payload. Links to the beacon block via `beacon_block_root`; includes `state_root` for stateless validation. |
+| `SignedExecutionPayloadEnvelope` | `message`, `signature` | Signed wrapper around `ExecutionPayloadEnvelope`. Builder signs to prove they authored the payload matching their bid. |
+
+#### beacon-chain.md - Modified Containers
+
+| Container | Changes | Description |
+|-----------|---------|-------------|
+| `BeaconBlockBody` | Added: `signed_execution_payload_bid`, `payload_attestations`. Removed: `execution_payload`, `blob_kzg_commitments`, `execution_requests` | Core structural change of ePBS. Proposers now include a builder's bid commitment instead of the actual payload. Payload attestations from previous slot's PTC are also included. |
+| `BeaconState` | Added: `latest_execution_payload_bid`, `execution_payload_availability`, `builder_pending_payments`, `builder_pending_withdrawals`, `latest_block_hash`, `payload_expected_withdrawals`. Removed: `latest_execution_payload_header` | New state fields track builder economics (pending payments, withdrawals), payload delivery history (availability bitvector), and expected withdrawals for validation. |
+
+#### fork-choice.md - New/Modified
+
+| Container | Fields | Description |
+|-----------|--------|-------------|
+| `ForkChoiceNode` | `root`, `payload_status` | Represents a node in the fork choice tree. A single block root can have multiple nodes (PENDING, EMPTY, FULL) depending on whether its payload was delivered. Fork choice picks the best (root, status) pair. |
+| `LatestMessage` | `slot`, `root`, `payload_present` | Validator's most recent attestation for LMD-GHOST. Now tracks `slot` (not epoch) for finer granularity, and `payload_present` to weight EMPTY vs FULL nodes appropriately. |
+| `Store` | Added: `execution_payload_states`, `ptc_vote` | Fork choice store additions. `execution_payload_states` maps roots to post-payload states; `ptc_vote` tracks PTC votes per block for timeliness determination. |
+
+#### p2p-interface.md - Modified
+
+| Container | Changes | Description |
+|-----------|---------|-------------|
+| `DataColumnSidecar` | Added: `slot`, `beacon_block_root`. Removed: `signed_block_header`, `kzg_commitments_inclusion_proof` | Simplified sidecar structure. Now references beacon block by root+slot rather than including full header. Removes redundant inclusion proof since commitments are in the envelope. |
 
 ### 9.3 Functions
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              FUNCTIONS                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  beacon-chain.md - Predicates (New)                                          │
-│  ──────────────────────────────────                                          │
-│  is_builder_withdrawal_credential(withdrawal_credentials)                    │
-│  has_builder_withdrawal_credential(validator)                                │
-│  is_attestation_same_slot(state, data)                                       │
-│  is_valid_indexed_payload_attestation(state, indexed_payload_attestation)    │
-│  is_parent_block_full(state)                                                 │
-│                                                                              │
-│  beacon-chain.md - Predicates (Modified)                                     │
-│  ───────────────────────────────────────                                     │
-│  has_compounding_withdrawal_credential(validator)                            │
-│                                                                              │
-│  beacon-chain.md - Misc (New)                                                │
-│  ────────────────────────────                                                │
-│  compute_balance_weighted_selection(state, indices, seed, size, shuffle)     │
-│  compute_balance_weighted_acceptance(state, index, seed, i)                  │
-│                                                                              │
-│  beacon-chain.md - Misc (Modified)                                           │
-│  ─────────────────────────────────                                           │
-│  get_pending_balance_to_withdraw(state, validator_index)                     │
-│  compute_proposer_indices(state, epoch, seed, indices)                       │
-│                                                                              │
-│  beacon-chain.md - State Accessors (New)                                     │
-│  ───────────────────────────────────────                                     │
-│  get_ptc(state, slot)                                                        │
-│  get_indexed_payload_attestation(state, payload_attestation)                 │
-│  get_builder_payment_quorum_threshold(state)                                 │
-│                                                                              │
-│  beacon-chain.md - State Accessors (Modified)                                │
-│  ────────────────────────────────────────────                                │
-│  get_next_sync_committee_indices(state)                                      │
-│  get_attestation_participation_flag_indices(state, data, inclusion_delay)    │
-│                                                                              │
-│  beacon-chain.md - State Transition (New)                                    │
-│  ─────────────────────────────────────────                                   │
-│  process_builder_pending_payments(state)                                     │
-│  is_builder_payment_withdrawable(state, withdrawal)                          │
-│  get_builder_withdrawable_balance(builder, balance)                          │
-│  get_builder_withdrawals(state, withdrawal_index, prior_withdrawals)         │
-│  update_payload_expected_withdrawals(state, withdrawals)                     │
-│  update_builder_pending_withdrawals(state, count)                            │
-│  verify_execution_payload_bid_signature(state, signed_bid)                   │
-│  process_execution_payload_bid(state, block)                                 │
-│  process_payload_attestation(state, payload_attestation)                     │
-│  verify_execution_payload_envelope_signature(state, signed_envelope)         │
-│  process_execution_payload(state, signed_envelope, execution_engine)         │
-│                                                                              │
-│  beacon-chain.md - State Transition (Modified)                               │
-│  ──────────────────────────────────────────────                              │
-│  process_slot(state)                                                         │
-│  process_epoch(state)                                                        │
-│  get_expected_withdrawals(state)                                             │
-│  process_withdrawals(state)                                                  │
-│  process_operations(state, body)                                             │
-│  process_attestation(state, attestation)                                     │
-│  process_proposer_slashing(state, proposer_slashing)                         │
-│                                                                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  fork-choice.md - Helpers (New)                                              │
-│  ──────────────────────────────                                              │
-│  notify_ptc_messages(store, state, payload_attestations)                     │
-│  is_payload_timely(store, root)                                              │
-│  get_parent_payload_status(store, block)                                     │
-│  is_parent_node_full(store, block)                                           │
-│  is_supporting_vote(store, node, message)                                    │
-│  should_extend_payload(store, root)                                          │
-│  get_payload_status_tiebreaker(store, node)                                  │
-│  get_node_children(store, blocks, node)                                      │
-│  get_payload_attestation_due_ms(epoch)                                       │
-│                                                                              │
-│  fork-choice.md - Helpers (Modified)                                         │
-│  ───────────────────────────────────                                         │
-│  update_latest_messages(store, attesting_indices, attestation)               │
-│  get_forkchoice_store(anchor_state, anchor_block)                            │
-│  get_ancestor(store, root, slot)                                             │
-│  get_checkpoint_block(store, root, epoch)                                    │
-│  get_weight(store, node)                                                     │
-│  get_head(store)                                                             │
-│  get_attestation_due_ms(epoch)                                               │
-│  get_aggregate_due_ms(epoch)                                                 │
-│  get_sync_message_due_ms(epoch)                                              │
-│  get_contribution_due_ms(epoch)                                              │
-│                                                                              │
-│  fork-choice.md - Handlers (New)                                             │
-│  ────────────────────────────────                                            │
-│  on_execution_payload(store, signed_envelope)                                │
-│  on_payload_attestation_message(store, ptc_message, is_from_block)           │
-│                                                                              │
-│  fork-choice.md - Handlers (Modified)                                        │
-│  ─────────────────────────────────────                                       │
-│  on_block(store, signed_block)                                               │
-│  validate_on_attestation(store, attestation, is_from_block)                  │
-│                                                                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  validator.md - Functions (New)                                              │
-│  ──────────────────────────────                                              │
-│  get_ptc_assignment(state, epoch, validator_index)                           │
-│  get_payload_attestation_message_signature(state, attestation, privkey)      │
-│                                                                              │
-│  validator.md - Functions (Modified)                                         │
-│  ───────────────────────────────────                                         │
-│  prepare_execution_payload(state, safe_block_hash, ...)                      │
-│  get_data_column_sidecars_from_column_sidecar(sidecar, cells_and_kzg_proofs) │
-│                                                                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  builder.md - Functions (New)                                                │
-│  ────────────────────────────                                                │
-│  get_execution_payload_bid_signature(state, bid, privkey)                    │
-│  get_data_column_sidecars(beacon_block_root, slot, kzg_commitments, ...)     │
-│  get_data_column_sidecars_from_block(signed_block, blob_kzg_commitments, ...)│
-│  get_execution_payload_envelope_signature(state, envelope, privkey)          │
-│                                                                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  p2p-interface.md - Functions (Modified)                                     │
-│  ───────────────────────────────────────                                     │
-│  compute_fork_version(epoch)                                                 │
-│  verify_data_column_sidecar(sidecar)                                         │
-│                                                                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  fork.md - Functions (New)                                                   │
-│  ─────────────────────────                                                   │
-│  upgrade_to_gloas(pre)                                                       │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+#### beacon-chain.md - Predicates (New)
+
+| Function | Description |
+|----------|-------------|
+| `is_builder_withdrawal_credential(withdrawal_credentials)` | Returns True if the withdrawal credentials start with `BUILDER_WITHDRAWAL_PREFIX` (0x03). Used to identify builder validators who can submit non-self-build bids. |
+| `has_builder_withdrawal_credential(validator)` | Returns True if the validator has builder withdrawal credentials. Convenience wrapper checking if validator can act as a builder. |
+| `is_attestation_same_slot(state, data)` | Returns True if the attestation is for the same slot as the current state. Used for builder payment quorum calculation (only same-slot attestations count). |
+| `is_valid_indexed_payload_attestation(state, indexed_payload_attestation)` | Validates a payload attestation: checks indices are sorted, within PTC bounds, signature is valid, and all attesters are in the PTC for that slot. |
+| `is_parent_block_full(state)` | Returns True if the parent block's payload was delivered (not empty). Checks `execution_payload_availability` bitvector for the parent slot. |
+
+#### beacon-chain.md - Predicates (Modified)
+
+| Function | Description |
+|----------|-------------|
+| `has_compounding_withdrawal_credential(validator)` | Modified to also return True for builder credentials (0x03), since builders can compound. Builders are treated as having compounding capability. |
+
+#### beacon-chain.md - Misc (New)
+
+| Function | Description |
+|----------|-------------|
+| `compute_balance_weighted_selection(state, indices, seed, size, shuffle)` | Selects `size` validators from `indices` weighted by effective balance. Core algorithm for PTC selection - validators with more stake are more likely to be selected. |
+| `compute_balance_weighted_acceptance(state, index, seed, i)` | Probabilistic acceptance function for balance-weighted sampling. Returns True if validator at `index` should be accepted based on their balance relative to MAX_EFFECTIVE_BALANCE. |
+
+#### beacon-chain.md - Misc (Modified)
+
+| Function | Description |
+|----------|-------------|
+| `get_pending_balance_to_withdraw(state, validator_index)` | Modified to also sum pending builder withdrawals. Returns total pending withdrawals including both regular and builder payment withdrawals. |
+| `compute_proposer_indices(state, epoch, seed, indices)` | Refactored to use `compute_balance_weighted_selection`. Now shares selection logic with PTC computation for consistency. |
+
+#### beacon-chain.md - State Accessors (New)
+
+| Function | Description |
+|----------|-------------|
+| `get_ptc(state, slot)` | Returns the 512-member Payload Timeliness Committee for a slot. Selects from that slot's attestation committees using balance-weighted sampling. |
+| `get_indexed_payload_attestation(state, payload_attestation)` | Converts aggregated payload attestation to indexed form. Expands aggregation bits to explicit validator indices for signature verification. |
+| `get_builder_payment_quorum_threshold(state)` | Calculates the 60% quorum threshold in Gwei. Returns `(per_slot_balance * 6) // 10` - the minimum attestation weight needed for builder payment. |
+
+#### beacon-chain.md - State Accessors (Modified)
+
+| Function | Description |
+|----------|-------------|
+| `get_next_sync_committee_indices(state)` | Modified to use refactored `compute_proposer_indices`. Internal change for code reuse, no functional difference. |
+| `get_attestation_participation_flag_indices(state, data, inclusion_delay)` | Modified to handle same-slot attestations differently. Same-slot attestations update builder payment weight instead of normal participation flags. |
+
+#### beacon-chain.md - State Transition (New)
+
+| Function | Description |
+|----------|-------------|
+| `process_builder_pending_payments(state)` | Called during epoch processing. Clears expired pending payments (older than 2 epochs) and moves confirmed payments to withdrawal queue. |
+| `is_builder_payment_withdrawable(state, withdrawal)` | Checks if a builder withdrawal is ready to process. Returns True if the builder exists and the current epoch >= `withdrawable_epoch`. |
+| `get_builder_withdrawable_balance(builder, balance)` | Returns the amount a builder can withdraw given their current balance. Ensures withdrawal doesn't exceed available balance. |
+| `get_builder_withdrawals(state, withdrawal_index, prior_withdrawals)` | Generates builder withdrawals for the current slot. Called during withdrawal processing to include pending builder payments. |
+| `update_payload_expected_withdrawals(state, withdrawals)` | Updates `payload_expected_withdrawals` state field. Called during slot processing to pre-compute withdrawals the payload must include. |
+| `update_builder_pending_withdrawals(state, count)` | Removes processed builder withdrawals from state. Called after withdrawals are included to clean up the queue. |
+| `verify_execution_payload_bid_signature(state, signed_bid)` | Verifies the builder's signature on their bid. Uses `DOMAIN_BEACON_BUILDER` and the builder's withdrawal credential public key. |
+| `process_execution_payload_bid(state, block)` | Processes the bid in a beacon block. Validates bid consistency (slot, parent, builder credentials), verifies signature, and updates `latest_execution_payload_bid`. |
+| `process_payload_attestation(state, payload_attestation)` | Processes a payload attestation from a previous slot's PTC. Updates builder payment weight if payload was marked present and quorum is reached. |
+| `verify_execution_payload_envelope_signature(state, signed_envelope)` | Verifies the builder's signature on the payload envelope. Ensures the revealed payload was authored by the committed builder. |
+| `process_execution_payload(state, signed_envelope, execution_engine)` | Processes the revealed execution payload. Validates it matches the bid commitment, executes via execution engine, and updates state. |
+
+#### beacon-chain.md - State Transition (Modified)
+
+| Function | Description |
+|----------|-------------|
+| `process_slot(state)` | Modified to update `payload_expected_withdrawals` each slot. Pre-computes withdrawals so payloads can be validated against expected values. |
+| `process_epoch(state)` | Modified to call `process_builder_pending_payments`. Handles expiration and confirmation of builder payments at epoch boundaries. |
+| `get_expected_withdrawals(state)` | Modified to include builder withdrawals. Interleaves regular validator withdrawals with builder payment withdrawals. |
+| `process_withdrawals(state)` | Modified to process builder withdrawals. Calls `update_builder_pending_withdrawals` to clear processed payments from queue. |
+| `process_operations(state, body)` | Modified to process `payload_attestations`. Iterates through attestations and calls `process_payload_attestation` for each. |
+| `process_attestation(state, attestation)` | Modified for same-slot attestation handling. Same-slot attestations contribute to builder payment weight instead of normal rewards. |
+| `process_proposer_slashing(state, proposer_slashing)` | Modified to forfeit builder's pending payments on slash. If slashed validator has pending payments, they're cancelled. |
+
+#### fork-choice.md - Helpers (New)
+
+| Function | Description |
+|----------|-------------|
+| `notify_ptc_messages(store, state, payload_attestations)` | Processes payload attestations from blocks. Extracts individual votes and calls `on_payload_attestation_message` for each to update fork choice. |
+| `is_payload_timely(store, root)` | Returns True if payload got sufficient PTC votes (>256 of 512). Checks `store.ptc_vote` to determine if payload was delivered on time. |
+| `get_parent_payload_status(store, block)` | Returns the payload status (EMPTY/FULL) of a block's parent. Used to determine valid child states in fork choice tree. |
+| `is_parent_node_full(store, block)` | Returns True if the block's parent has FULL payload status. Convenience function for checking parent payload availability. |
+| `is_supporting_vote(store, node, message)` | Returns True if an attestation message supports a fork choice node. Considers both block root ancestry AND payload status compatibility. |
+| `should_extend_payload(store, root)` | Decides whether to extend with FULL or EMPTY payload status. Returns True (FULL) if payload was timely, parent was FULL, and payload state exists. |
+| `get_payload_status_tiebreaker(store, node)` | Returns tiebreaker value (0, 1, or 2) for equal-weight nodes. FULL nodes beat PENDING which beat EMPTY, incentivizing payload delivery. |
+| `get_node_children(store, blocks, node)` | Returns valid child nodes for a parent node. Generates appropriate (root, status) pairs based on parent's payload status. |
+| `get_payload_attestation_due_ms(epoch)` | Returns PTC attestation deadline in milliseconds (9000ms = 75% of slot). Used for timing PTC votes. |
+
+#### fork-choice.md - Helpers (Modified)
+
+| Function | Description |
+|----------|-------------|
+| `update_latest_messages(store, attesting_indices, attestation)` | Modified to track `payload_present` from attestation. Latest messages now include whether attester saw the payload. |
+| `get_forkchoice_store(anchor_state, anchor_block)` | Modified to initialize new store fields. Sets up `execution_payload_states` and `ptc_vote` mappings. |
+| `get_ancestor(store, root, slot)` | Modified to work with ForkChoiceNodes. Traverses (root, status) pairs when finding ancestors. |
+| `get_checkpoint_block(store, root, epoch)` | Modified to return ForkChoiceNode. Returns the block at epoch boundary with appropriate payload status. |
+| `get_weight(store, node)` | Modified to weight EMPTY vs FULL nodes differently. Attestations supporting specific payload status only count for matching nodes. |
+| `get_head(store)` | Modified to return ForkChoiceNode (root + status). Finds highest-weight leaf considering both block and payload status. |
+| `get_attestation_due_ms(epoch)` | Modified for GLOAS timing (3000ms = 25% vs previous 33%). Earlier deadline gives builders more time. |
+| `get_aggregate_due_ms(epoch)` | Modified for GLOAS timing (6000ms = 50%). Aligned with new slot timeline. |
+| `get_sync_message_due_ms(epoch)` | Modified for GLOAS timing (3000ms = 25%). Aligned with attestation deadline. |
+| `get_contribution_due_ms(epoch)` | Modified for GLOAS timing (6000ms = 50%). Aligned with aggregation deadline. |
+
+#### fork-choice.md - Handlers (New)
+
+| Function | Description |
+|----------|-------------|
+| `on_execution_payload(store, signed_envelope)` | Handler for received execution payloads. Validates envelope matches committed bid, processes through execution engine, updates `execution_payload_states`. |
+| `on_payload_attestation_message(store, ptc_message, is_from_block)` | Handler for PTC attestation messages. Updates `store.ptc_vote` bitmap, may trigger payload status resolution from PENDING to FULL/EMPTY. |
+
+#### fork-choice.md - Handlers (Modified)
+
+| Function | Description |
+|----------|-------------|
+| `on_block(store, signed_block)` | Modified for ePBS block structure. Processes bid instead of payload, handles payload attestations from block body, initializes PENDING status. |
+| `validate_on_attestation(store, attestation, is_from_block)` | Modified to validate payload status in attestation. Ensures attested (root, status) pair is valid in fork choice tree. |
+
+#### validator.md - Functions (New)
+
+| Function | Description |
+|----------|-------------|
+| `get_ptc_assignment(state, epoch, validator_index)` | Returns the slot a validator is assigned to the PTC, or None if not assigned. Validators check this to know when to send payload attestations. |
+| `get_payload_attestation_message_signature(state, attestation, privkey)` | Signs a payload attestation message with `DOMAIN_PTC_ATTESTER`. Returns the BLS signature for the PTC vote. |
+
+#### validator.md - Functions (Modified)
+
+| Function | Description |
+|----------|-------------|
+| `prepare_execution_payload(state, safe_block_hash, ...)` | Modified to prepare payload for builders. Builders use this when constructing payloads to match their bid commitments. |
+| `get_data_column_sidecars_from_column_sidecar(sidecar, cells_and_kzg_proofs)` | Modified for new sidecar structure. Handles simplified `DataColumnSidecar` format without block header. |
+
+#### builder.md - Functions (New)
+
+| Function | Description |
+|----------|-------------|
+| `get_execution_payload_bid_signature(state, bid, privkey)` | Signs an execution payload bid with `DOMAIN_BEACON_BUILDER`. Returns BLS signature using builder's withdrawal credential key. |
+| `get_data_column_sidecars(beacon_block_root, slot, kzg_commitments, ...)` | Generates data column sidecars for blob data. Builders create these alongside payload envelopes for data availability. |
+| `get_data_column_sidecars_from_block(signed_block, blob_kzg_commitments, ...)` | Alternative sidecar generation from block context. Used when commitments come from signed envelope rather than block. |
+| `get_execution_payload_envelope_signature(state, envelope, privkey)` | Signs an execution payload envelope with `DOMAIN_BEACON_BUILDER`. Builder signs to prove payload authorship. |
+
+#### p2p-interface.md - Functions (Modified)
+
+| Function | Description |
+|----------|-------------|
+| `compute_fork_version(epoch)` | Modified to return `GLOAS_FORK_VERSION` after GLOAS activation. Used for fork digest in p2p message validation. |
+| `verify_data_column_sidecar(sidecar)` | Modified for new sidecar structure. Validates sidecars using `beacon_block_root` + `slot` instead of block header. |
+
+#### fork.md - Functions (New)
+
+| Function | Description |
+|----------|-------------|
+| `upgrade_to_gloas(pre)` | Upgrades beacon state from Fulu to GLOAS. Initializes new state fields (`latest_execution_payload_bid`, `builder_pending_payments`, etc.) with appropriate defaults. |
 
 ### 9.4 Gossip Topics
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           GOSSIP TOPICS (p2p-interface.md)                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  NEW Global Topics                                                           │
-│  ─────────────────                                                           │
-│  execution_payload_bid          SignedExecutionPayloadBid                    │
-│  execution_payload              SignedExecutionPayloadEnvelope               │
-│  payload_attestation_message    PayloadAttestationMessage                    │
-│                                                                              │
-│  MODIFIED Topics                                                             │
-│  ───────────────                                                             │
-│  beacon_block                   SignedBeaconBlock (modified type)            │
-│  beacon_aggregate_and_proof     + index validation for payload status        │
-│  beacon_attestation_{subnet_id} + index validation for payload status        │
-│  data_column_sidecar_{subnet_id} Modified validation rules                   │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+#### New Global Topics
+
+| Topic | Message Type | Description |
+|-------|--------------|-------------|
+| `execution_payload_bid` | `SignedExecutionPayloadBid` | Builders broadcast their bids on this topic. Proposers subscribe to receive bids and select the highest-value valid bid for inclusion in their block. |
+| `execution_payload` | `SignedExecutionPayloadEnvelope` | Builders broadcast revealed payloads on this topic after seeing their bid included. Validators receive payloads to update fork choice and execute state transitions. |
+| `payload_attestation_message` | `PayloadAttestationMessage` | PTC members broadcast their individual votes on payload timeliness. Aggregators collect these for block inclusion; fork choice uses them to determine payload status. |
+
+#### Modified Topics
+
+| Topic | Changes | Description |
+|-------|---------|-------------|
+| `beacon_block` | Modified message type | Now uses GLOAS `SignedBeaconBlock` which contains bid commitment instead of execution payload. Validation rules updated accordingly. |
+| `beacon_aggregate_and_proof` | Added index validation | Aggregates must validate that the attested `index` (EMPTY=0, FULL=1) is consistent with the fork choice tree's payload status for that block. |
+| `beacon_attestation_{subnet_id}` | Added index validation | Individual attestations must specify valid payload status index. Rejects attestations for invalid (root, status) combinations. |
+| `data_column_sidecar_{subnet_id}` | Modified validation | Updated to validate new sidecar structure using `beacon_block_root` + `slot` instead of signed block header. |
 
 ### 9.5 Req/Resp Methods
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       REQ/RESP METHODS (p2p-interface.md)                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  NEW Methods                                                                 │
-│  ───────────                                                                 │
-│  ExecutionPayloadEnvelopesByRange v1                                         │
-│    Protocol: /eth2/beacon_chain/req/execution_payload_envelopes_by_range/1/  │
-│    Request:  { start_slot, count }                                           │
-│    Response: List[SignedExecutionPayloadEnvelope]                            │
-│                                                                              │
-│  ExecutionPayloadEnvelopesByRoot v1                                          │
-│    Protocol: /eth2/beacon_chain/req/execution_payload_envelopes_by_root/1/   │
-│    Request:  List[Root, MAX_REQUEST_PAYLOADS]                                │
-│    Response: List[SignedExecutionPayloadEnvelope, MAX_REQUEST_PAYLOADS]      │
-│                                                                              │
-│  UPDATED Methods                                                             │
-│  ───────────────                                                             │
-│  BeaconBlocksByRange v2    + GLOAS_FORK_VERSION → gloas.SignedBeaconBlock    │
-│  BeaconBlocksByRoot v2     + GLOAS_FORK_VERSION → gloas.SignedBeaconBlock    │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+#### New Methods
+
+| Method | Protocol | Description |
+|--------|----------|-------------|
+| `ExecutionPayloadEnvelopesByRange` v1 | `/eth2/beacon_chain/req/execution_payload_envelopes_by_range/1/` | Request payloads for a range of slots. Used during sync to fetch execution payloads separately from beacon blocks. Request: `{start_slot, count}`. Response: `List[SignedExecutionPayloadEnvelope]`. |
+| `ExecutionPayloadEnvelopesByRoot` v1 | `/eth2/beacon_chain/req/execution_payload_envelopes_by_root/1/` | Request specific payloads by beacon block root. Used for targeted payload fetching when syncing or recovering from missed gossip. Request: `List[Root]`. Response: `List[SignedExecutionPayloadEnvelope]`. |
+
+#### Updated Methods
+
+| Method | Changes | Description |
+|--------|---------|-------------|
+| `BeaconBlocksByRange` v2 | Added GLOAS support | Returns GLOAS-format blocks (with bid, without payload) when requesting slots after `GLOAS_FORK_EPOCH`. Clients must separately fetch payloads via envelope methods. |
+| `BeaconBlocksByRoot` v2 | Added GLOAS support | Returns GLOAS-format blocks by root. Response type depends on the block's fork version - GLOAS blocks contain bids, pre-GLOAS blocks contain payloads. |
 
 ---
 

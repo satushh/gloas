@@ -1268,7 +1268,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │      if len(sidecar.kzg_commitments) > max_blobs: return False      │   │
   │  │                                                                     │   │
   │  │      # Consistent lengths                                           │   │
-  │  │      if len(column) != len(commitments) != len(proofs): return False│   │
+  │  │      if len(column) != len(commitments) or len(column) != len(proofs): return False│   │
   │  │                                                                     │   │
   │  │      return True                                                    │   │
   │  │                                                                     │   │
@@ -1407,12 +1407,11 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
   │  │  Builders:                        Regular Validators:               │   │
-  │  │  • CAN submit execution bids      • CANNOT submit bids              │   │
+  │  │  • CAN submit execution bids      • CAN self-build if proposer      │   │
   │  │  • CAN pay proposers              • Don't have payment mechanism    │   │
   │  │  • Have 0x03 credentials          • Have 0x01 or 0x02               │   │
-  │  │  • Subject to builder penalties   • Only standard penalties         │   │
-  │  │  • CANNOT propose blocks          • CAN propose blocks              │   │
-  │  │    (unless also a proposer)                                         │   │
+  │  │  • Payments delayed if slashed   • Only standard penalties          │   │
+  │  │  • CAN propose blocks            • CAN propose blocks               │   │
   │  │                                                                     │   │
   │  │  Note: You can be BOTH! A validator can also be a builder.          │   │
   │  │  Self-building: proposer uses their own builder identity.           │   │
@@ -1458,6 +1457,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │      builder_index = my_validator_index,                            │   │
   │  │      slot = target_slot,                       # Current or next    │   │
   │  │      value = payment_amount,                   # What I'll pay      │   │
+  │  │      execution_payment = nonzero_payment,       # For gossip checks │   │
   │  │      blob_kzg_commitments_root = hash_tree_root(blobs.commitments), │   │
   │  │  )                                                                  │   │
   │  │                                                                     │   │
@@ -1482,7 +1482,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │                                                                     │   │
   │  │    if included_bid.builder_index == my_validator_index:             │   │
   │  │        # MY BID WAS SELECTED! 🎉                                    │   │
-  │  │        # Now I MUST reveal the payload (or still pay!)              │   │
+  │  │        # Reveal payload; payment only if same-slot quorum reached   │   │
   │  │        proceed to Phase 4                                           │   │
   │  │    else:                                                            │   │
   │  │        # Different builder won, I keep my payload                   │   │

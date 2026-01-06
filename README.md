@@ -132,8 +132,9 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
       │  │  │  │         ExecutionPayload              │  │  │  │
       │  │  │  │  • transactions                       │  │  │  │
       │  │  │  │  • withdrawals                        │  │  │  │
-      │  │  │  │  • blob_kzg_commitments               │  │  │  │
       │  │  │  └───────────────────────────────────────┘  │  │  │
+      │  │  │  • blob_kzg_commitments                     │  │  │
+      │  │  │  • execution_requests                       │  │  │
       │  │  └─────────────────────────────────────────────┘  │  │
       │  └───────────────────────────────────────────────────┘  │
       └─────────────────────────────────────────────────────────┘

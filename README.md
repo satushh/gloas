@@ -456,7 +456,8 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
   │  │    │ value               │ Gwei - PAYMENT to proposer           │◄─┼───┤
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
-  │  │    │ execution_payment   │ Gwei - Non-zero for gossip acceptance│  │   │
+  │  │    │ execution_payment   │ Gwei - For trusted out-of-protocol   │  │   │
+  │  │    │                     │ auctions (must be 0 for gossip)      │  │   │
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
   │  │    │ blob_kzg_commitments│ Root - Hash of blob commitments      │  │   │
   │  │    │ _root               │                                      │  │   │
@@ -1165,7 +1166,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │ REJECT if:                                                          │   │
   │  │   • builder_index is not valid, active, and non-slashed            │   │
   │  │   • builder doesn't have 0x03 (BUILDER_WITHDRAWAL_PREFIX)          │   │
-  │  │   • execution_payment is zero (reserved field)                     │   │
+  │  │   • execution_payment is non-zero (reserved for trusted auctions)  │   │
   │  │   • signature is invalid                                           │   │
   │  │                                                                     │   │
   │  │ IGNORE if:                                                          │   │
@@ -1509,7 +1510,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │      builder_index = my_builder_index,          # BuilderIndex type │   │
   │  │      slot = target_slot,                       # Current or next    │   │
   │  │      value = payment_amount,                   # What I'll pay      │   │
-  │  │      execution_payment = 0,                    # Must be 0 now      │   │
+  │  │      execution_payment = 0,                    # Must be 0 for gossip│   │
   │  │      blob_kzg_commitments_root = hash_tree_root(blobs.commitments), │   │
   │  │  )                                                                  │   │
   │  │                                                                     │   │
@@ -1713,7 +1714,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │  If proposer wants to build their own block:                        │   │
   │  │                                                                     │   │
   │  │  bid = ExecutionPayloadBid(                                         │   │
-  │  │      builder_index = proposer_index,   # Same as proposer!          │   │
+  │  │      builder_index = BUILDER_INDEX_SELF_BUILD,  # UINT64_MAX        │   │
   │  │      value = 0,                        # No payment to self         │   │
   │  │      ...other fields...                                             │   │
   │  │  )                                                                  │   │
@@ -2093,7 +2094,7 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 | `PayloadAttestation` | `aggregation_bits`, `data`, `signature` | Aggregated payload attestation included in blocks. `aggregation_bits` indicates which PTC members are included in this aggregate signature. |
 | `PayloadAttestationMessage` | `validator_index`, `data`, `signature` | Individual (non-aggregated) payload attestation from a single PTC member. Gossiped on p2p network, then aggregated for block inclusion. |
 | `IndexedPayloadAttestation` | `attesting_indices`, `data`, `signature` | Payload attestation with explicit validator indices (vs bitfield). Used internally for signature verification and slashing evidence. |
-| `ExecutionPayloadBid` | `parent_block_hash`, `parent_block_root`, `block_hash`, `prev_randao`, `fee_recipient`, `gas_limit`, `builder_index`, `slot`, `value`, `execution_payment`, `blob_kzg_commitments_root` | Builder's commitment to build a specific payload. `builder_index` is `BuilderIndex` type. `fee_recipient` and `gas_limit` must match proposer's `SignedProposerPreferences`. |
+| `ExecutionPayloadBid` | `parent_block_hash`, `parent_block_root`, `block_hash`, `prev_randao`, `fee_recipient`, `gas_limit`, `builder_index`, `slot`, `value`, `execution_payment`, `blob_kzg_commitments_root` | Builder's commitment to build a specific payload. `builder_index` is `BuilderIndex` type. `fee_recipient` and `gas_limit` must match proposer's `SignedProposerPreferences`. `execution_payment` is for trusted out-of-protocol auctions (must be 0 for gossip). |
 | `SignedExecutionPayloadBid` | `message`, `signature` | Signed wrapper around `ExecutionPayloadBid`. Builder signs with their BLS key from `state.builders[builder_index].pubkey`. |
 | `ExecutionPayloadEnvelope` | `payload`, `execution_requests`, `builder_index`, `beacon_block_root`, `slot`, `blob_kzg_commitments`, `state_root` | Container for the revealed execution payload. Links to the beacon block via `beacon_block_root`; includes `state_root` for stateless validation. `builder_index` is `BuilderIndex` type. |
 | `SignedExecutionPayloadEnvelope` | `message`, `signature` | Signed wrapper around `ExecutionPayloadEnvelope`. Builder signs to prove they authored the payload matching their bid. |

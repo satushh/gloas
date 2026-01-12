@@ -2025,338 +2025,840 @@ A Complete Visual Guide
 
 ## 9. SPEC REFERENCE INDEX
 
-Quick lookup for constants, containers, and functions defined in the GLOAS specs. Each entry includes a brief description of its purpose.
+Detailed reference for constants, containers, and functions defined in the GLOAS specs. Each entry explains not just what it is, but **why** it exists and how it fits into the ePBS design.
+
+---
 
 ### 9.0 Custom Types
 
-| Type | SSZ Equivalent | Description |
-|------|----------------|-------------|
-| `BuilderIndex` | `uint64` | Index into the builder registry (`state.builders`). Separate from `ValidatorIndex` - builders are NOT validators. |
+#### `BuilderIndex` (uint64)
+
+**What:** An index into the builder registry (`state.builders`).
+
+**Why it exists:** GLOAS introduces a completely separate registry for builders, distinct from the validator registry. Builders are specialized actors who construct execution payloads but do NOT perform validation duties (no attesting, no sync committee, no proposing). Having a separate index type prevents confusion and accidental mixing of builder and validator indices in the codebase. When you see `BuilderIndex`, you know it refers to `state.builders[i]`, not `state.validators[i]`.
+
+---
 
 ### 9.1 Constants
 
-#### beacon-chain.md - Index Flags
+#### Index Flags
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `BUILDER_INDEX_FLAG` | `uint64(2**40)` | Bitwise flag to distinguish `BuilderIndex` from `ValidatorIndex` in contexts where both might appear. |
+**`BUILDER_INDEX_FLAG`** = `uint64(2**40)`
 
-#### beacon-chain.md - Domain Types
+**What:** A bitwise flag used to mark an index as a `BuilderIndex`.
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `DOMAIN_BEACON_BUILDER` | `DomainType('0x0B000000')` | Domain for signing builder-related messages (bids and payload envelopes). Separates builder signatures from other validator duties. |
-| `DOMAIN_PTC_ATTESTER` | `DomainType('0x0C000000')` | Domain for signing payload attestation messages. Used by PTC members when voting on payload timeliness. |
-| `DOMAIN_PROPOSER_PREFERENCES` | `DomainType('0x0D000000')` | Domain for signing proposer preferences messages. Proposers use this to communicate fee_recipient and gas_limit to builders. |
+**Why it exists:** In some contexts (like withdrawal processing), both validators and builders can appear in the same data structures. This flag allows the protocol to distinguish between them. If `index & BUILDER_INDEX_FLAG != 0`, it's a builder; otherwise it's a validator. The value `2**40` is chosen to be larger than any realistic validator count while still fitting in uint64.
 
-#### beacon-chain.md - Misc
+---
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `BUILDER_INDEX_SELF_BUILD` | `BuilderIndex(UINT64_MAX)` | Special builder index indicating the proposer built the payload themselves (self-build). No external builder involved. |
-| `BUILDER_PAYMENT_THRESHOLD_NUMERATOR` | `uint64(6)` | Numerator for the 60% quorum threshold. Builder payments only execute if same-slot attestations representing 60% of expected weight are received. |
-| `BUILDER_PAYMENT_THRESHOLD_DENOMINATOR` | `uint64(10)` | Denominator for the 60% quorum threshold. Combined with numerator: 6/10 = 60% of per-slot balance required for payment. |
+#### Domain Types
 
-#### beacon-chain.md - Withdrawal Prefixes
+**`DOMAIN_BEACON_BUILDER`** = `DomainType('0x0B000000')`
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `BUILDER_WITHDRAWAL_PREFIX` | `Bytes1('0x03')` | Deposit credential prefix that routes deposits to the builder registry instead of validator registry. The 0x03 prefix creates a `Builder` entry, not a `Validator` entry. |
+**What:** Signing domain for builder messages (bids and payload envelopes).
 
-#### beacon-chain.md - Preset
+**Why it exists:** BLS signatures in Ethereum use "domain separation" to prevent cross-protocol replay attacks. A signature valid for one purpose (e.g., an attestation) must not be valid for another (e.g., a bid). By giving builders their own domain, a builder's bid signature cannot be replayed as an attestation or vice versa. The `0x0B` prefix is unique to builder operations.
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `PTC_SIZE` | `uint64(512)` | Number of validators in the Payload Timeliness Committee per slot. Selected via balance-weighted sampling from that slot's attestation committees. |
-| `MAX_PAYLOAD_ATTESTATIONS` | `4` | Maximum number of aggregated payload attestations that can be included in a beacon block. Limits block size while allowing sufficient coverage. |
-| `BUILDER_REGISTRY_LIMIT` | `uint64(2**40)` (≈ 1 trillion) | Maximum number of builders in `state.builders`. Separate from validator registry limit. |
-| `BUILDER_PENDING_WITHDRAWALS_LIMIT` | `uint64(2**20)` (≈ 1M) | Maximum pending builder withdrawals in the state. Large limit accommodates high throughput without state bloat concerns. |
-| `MAX_BUILDERS_PER_WITHDRAWALS_SWEEP` | `uint64(2**14)` (= 16,384) | Maximum builders processed per withdrawal sweep. Limits computation per slot. |
+**`DOMAIN_PTC_ATTESTER`** = `DomainType('0x0C000000')`
 
-#### beacon-chain.md - Configuration
+**What:** Signing domain for Payload Timeliness Committee attestations.
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `MIN_BUILDER_WITHDRAWABILITY_DELAY` | `uint64(4096)` epochs (≈ 18 days) | Minimum delay before a builder can withdraw after initiating exit. Long delay ensures all pending payments settle before exit. |
+**Why it exists:** PTC members vote on whether they saw the execution payload arrive on time. These votes need their own domain because they serve a different purpose than regular attestations—they're about payload timeliness, not block validity. Separating the domain prevents a regular attestation from being misinterpreted as a PTC vote.
 
-#### fork-choice.md - Constants
+**`DOMAIN_PROPOSER_PREFERENCES`** = `DomainType('0x0D000000')`
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `PAYLOAD_TIMELY_THRESHOLD` | `PTC_SIZE // 2` (= 256) | Minimum PTC votes needed to consider a payload "timely". If >256 of 512 PTC members vote present, the payload is considered delivered on time. |
-| `PAYLOAD_STATUS_PENDING` | `PayloadStatus(0)` | Fork choice status for a beacon block whose payload hasn't been resolved yet. Transitional state before becoming EMPTY or FULL. |
-| `PAYLOAD_STATUS_EMPTY` | `PayloadStatus(1)` | Fork choice status indicating the execution payload was NOT delivered. The beacon block exists but has no corresponding execution data. |
-| `PAYLOAD_STATUS_FULL` | `PayloadStatus(2)` | Fork choice status indicating the execution payload WAS delivered and validated. The block is complete with both consensus and execution layers. |
+**What:** Signing domain for proposer preference messages.
 
-#### validator.md - Time Parameters
+**Why it exists:** Before builders can construct valid bids, they need to know the proposer's `fee_recipient` (where to send payment) and `gas_limit` preferences. Proposers broadcast signed preferences so builders know what values to use. The separate domain ensures these preference messages can't be confused with other signed messages.
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `ATTESTATION_DUE_BPS_GLOAS` | `uint64(2500)` (25% = 3s) | Attestation deadline in GLOAS (earlier than pre-GLOAS 33%). Moved earlier to give builders more time to construct and broadcast payloads. |
-| `AGGREGATE_DUE_BPS_GLOAS` | `uint64(5000)` (50% = 6s) | Aggregation deadline in GLOAS. Aggregators collect attestations and publish aggregates by the halfway point of the slot. |
-| `SYNC_MESSAGE_DUE_BPS_GLOAS` | `uint64(2500)` (25% = 3s) | Sync committee message deadline in GLOAS. Aligned with attestation deadline for consistency. |
-| `CONTRIBUTION_DUE_BPS_GLOAS` | `uint64(5000)` (50% = 6s) | Sync committee contribution deadline in GLOAS. Aligned with aggregation deadline for consistency. |
-| `PAYLOAD_ATTESTATION_DUE_BPS` | `uint64(7500)` (75% = 9s) | PTC attestation deadline. PTC members vote on payload availability at 75% of slot, giving builders maximum time to reveal. |
+---
 
-#### p2p-interface.md - Configuration
+#### Misc Constants
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `MAX_REQUEST_PAYLOADS` | `uint64(128)` | Maximum execution payload envelopes requestable in a single req/resp call. Limits bandwidth while allowing efficient syncing. |
+**`BUILDER_INDEX_SELF_BUILD`** = `BuilderIndex(UINT64_MAX)`
 
-#### fork.md - Configuration
+**What:** A sentinel value indicating the proposer built the payload themselves.
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `GLOAS_FORK_VERSION` | `Version('0x07000000')` | Fork version identifier for GLOAS. Used in domain separation and fork digest calculations. |
-| `GLOAS_FORK_EPOCH` | `TBD` | Epoch at which GLOAS activates. To be determined based on testnet results and community coordination. |
+**Why it exists:** Proposers don't have to use external builders—they can construct their own payloads (called "self-building"). When self-building, there's no actual builder in the registry, so we need a special marker. `UINT64_MAX` is chosen because it's an impossible index (no registry will ever have that many entries), making it unambiguous. Self-built blocks use a special signature (`G2_POINT_AT_INFINITY`) and don't require 0x03 credentials.
+
+**`BUILDER_PAYMENT_THRESHOLD_NUMERATOR`** = `6` and **`BUILDER_PAYMENT_THRESHOLD_DENOMINATOR`** = `10`
+
+**What:** Together these define the 60% quorum threshold for builder payments.
+
+**Why it exists:** Builder payments shouldn't execute blindly—what if the proposer equivocated or the network partitioned? The protocol requires 60% of same-slot attestation weight before confirming a payment. This threshold balances:
+- **Too low (e.g., 33%):** Payments could execute even during attacks or partitions
+- **Too high (e.g., 90%):** Normal network latency might prevent legitimate payments
+
+60% ensures honest supermajority agreement before money moves. The numerator/denominator split allows integer arithmetic without floating point.
+
+---
+
+#### Withdrawal Prefixes
+
+**`BUILDER_WITHDRAWAL_PREFIX`** = `Bytes1('0x03')`
+
+**What:** The first byte of withdrawal credentials that routes a deposit to the builder registry.
+
+**Why it exists:** Ethereum already has withdrawal credential prefixes: `0x00` for BLS credentials, `0x01` for execution layer credentials, `0x02` for compounding validators. GLOAS adds `0x03` for builders. When the deposit contract processes a deposit, the first byte determines where it goes:
+- `0x00`, `0x01`, `0x02` → Creates/updates a `Validator` in `state.validators`
+- `0x03` → Creates/updates a `Builder` in `state.builders`
+
+This elegantly reuses existing deposit infrastructure for a new actor type.
+
+---
+
+#### Preset Constants
+
+**`PTC_SIZE`** = `512`
+
+**What:** Number of validators in the Payload Timeliness Committee per slot.
+
+**Why it exists:** The PTC votes on whether the payload arrived on time. 512 provides:
+- **Security:** Hard to bribe/corrupt a significant fraction of randomly-selected validators
+- **Efficiency:** Small enough that votes can be aggregated into blocks without excessive overhead
+- **Decentralization:** Large enough sample from the full validator set
+
+The value is chosen to balance security margins with practical constraints on block size and gossip overhead.
+
+**`MAX_PAYLOAD_ATTESTATIONS`** = `4`
+
+**What:** Maximum aggregated payload attestations per block.
+
+**Why it exists:** PTC members might vote with different `PayloadAttestationData` (e.g., some saw payload, some didn't; some saw blobs, some didn't). Each unique data combination needs a separate aggregate. With 2 boolean fields (`payload_present`, `blob_data_available`), there are at most 3 valid combinations (one is impossible: blobs without payload). `MAX_PAYLOAD_ATTESTATIONS = 4` provides headroom for all cases plus margin.
+
+**`BUILDER_REGISTRY_LIMIT`** = `2**40` (≈ 1 trillion)
+
+**What:** Maximum builders allowed in `state.builders`.
+
+**Why it exists:** State fields need explicit limits for SSZ serialization. The limit is set astronomically high because:
+- There's no practical reason to cap builder count tightly
+- Builders are market actors; we shouldn't artificially restrict competition
+- The limit only affects worst-case state size calculations
+
+**`BUILDER_PENDING_WITHDRAWALS_LIMIT`** = `2**20` (≈ 1 million)
+
+**What:** Maximum pending builder payment withdrawals in state.
+
+**Why it exists:** After a builder payment reaches quorum, it's queued for withdrawal (actual ETH transfer). This queue needs a limit. 1 million is generous—even with a block every 12 seconds, that's ~140 days of backlog at 1 payment per slot before hitting the limit.
+
+**`MAX_BUILDERS_PER_WITHDRAWALS_SWEEP`** = `16,384`
+
+**What:** Maximum builders processed per slot during withdrawal sweep.
+
+**Why it exists:** Like validators, builders may have pending withdrawals (exiting the protocol). Processing happens via a "sweep" that iterates through builders. To bound per-slot computation, we limit how many builders are checked per sweep. 16,384 ensures the entire builder registry can be swept in reasonable time even if it grows large.
+
+---
+
+#### Configuration Constants
+
+**`MIN_BUILDER_WITHDRAWABILITY_DELAY`** = `4096` epochs (≈ 18 days)
+
+**What:** Minimum wait time before a builder can withdraw after initiating exit.
+
+**Why it exists:** This is much longer than validator exit delays (~27 hours). Why?
+
+1. **Payment settlement:** Builder payments take time to confirm (quorum gathering, epoch processing). A builder might have pending payments that aren't finalized yet.
+2. **Fraud prevention:** If a builder commits fraud, the long delay ensures they can't quickly exit and escape with stake before the fraud is detected.
+3. **Economic security:** Builders handle larger sums (MEV) than individual validators. Longer delays provide stronger guarantees.
+
+18 days ensures all possible pending payments have definitively settled or expired before the builder can withdraw.
+
+---
+
+#### Fork Choice Constants
+
+**`PAYLOAD_TIMELY_THRESHOLD`** = `256` (PTC_SIZE // 2)
+
+**What:** Minimum PTC votes needed to consider a payload "timely."
+
+**Why it exists:** Fork choice needs to decide: was the payload delivered on time, or did the builder withhold? If >256 of 512 PTC members vote "present," we consider it timely. Simple majority (50%+1) prevents:
+- A minority of slow/offline PTC members from incorrectly marking a timely payload as late
+- An attacker from claiming timeliness by bribing only a minority
+
+**`PAYLOAD_STATUS_PENDING`** = `0`, **`PAYLOAD_STATUS_EMPTY`** = `1`, **`PAYLOAD_STATUS_FULL`** = `2`
+
+**What:** The three possible states of a block's payload in fork choice.
+
+**Why they exist:** In GLOAS, a beacon block arrives first, then its payload arrives separately. Fork choice must track this two-phase process:
+- **PENDING:** Block seen, waiting to see if payload arrives
+- **EMPTY:** Block seen, payload did NOT arrive (builder withheld or too slow)
+- **FULL:** Block seen AND payload received and validated
+
+This three-state model lets fork choice reason about partial blocks and choose the best chain considering payload availability.
+
+---
+
+#### Time Parameters
+
+**`ATTESTATION_DUE_BPS_GLOAS`** = `2500` (25% = 3 seconds into slot)
+
+**What:** When attesters must submit their attestations.
+
+**Why it changed:** Pre-GLOAS, attestations were due at 33% (4 seconds). GLOAS moves this earlier to 25% (3 seconds). Why?
+
+The new slot timeline needs more time for:
+1. Builder to see the block and release the payload
+2. PTC to see the payload and vote
+3. Next proposer to collect PTC votes
+
+Moving attestations earlier frees up time later in the slot for these new activities.
+
+**`PAYLOAD_ATTESTATION_DUE_BPS`** = `7500` (75% = 9 seconds into slot)
+
+**What:** When PTC members must submit their payload attestations.
+
+**Why this timing:** PTC members vote on whether they've seen the payload. Waiting until 75% of the slot (9 seconds) gives builders maximum time to reveal their payload while still leaving 3 seconds for the next proposer to collect and aggregate PTC votes.
+
+---
+
+#### P2P Configuration
+
+**`MAX_REQUEST_PAYLOADS`** = `128`
+
+**What:** Maximum payloads requestable in one req/resp call.
+
+**Why it exists:** GLOAS adds new req/resp methods for fetching execution payloads (since they're no longer embedded in blocks). This limit prevents a single request from overwhelming bandwidth while still allowing efficient batch syncing.
+
+---
+
+#### Fork Configuration
+
+**`GLOAS_FORK_VERSION`** = `Version('0x07000000')`
+
+**What:** The 4-byte fork identifier for GLOAS.
+
+**Why it exists:** Each Ethereum fork has a unique version for domain separation. Signatures made under one fork version are invalid under another, preventing cross-fork replay attacks. `0x07` follows the sequence: Phase0 (`0x00`), Altair (`0x01`), Bellatrix (`0x02`), Capella (`0x03`), Deneb (`0x04`), Electra (`0x05`), Fulu (`0x06`), GLOAS (`0x07`).
+
+**`GLOAS_FORK_EPOCH`** = TBD
+
+**What:** The epoch when GLOAS activates.
+
+**Why TBD:** Fork epochs are determined through community coordination after extensive testing. Setting it to TBD allows the spec to be finalized before the activation date is chosen.
+
+---
 
 ### 9.2 Containers
 
-#### beacon-chain.md - New Containers
+#### New Containers
 
-| Container | Fields | Description |
-|-----------|--------|-------------|
-| `Builder` | `pubkey`, `version`, `execution_address`, `balance`, `deposit_epoch`, `withdrawable_epoch` | Represents a builder in the separate builder registry. Builders are staked actors who build payloads but do NOT perform validation duties. `balance` is their staked Gwei for covering bid payments. |
-| `BuilderPendingPayment` | `weight`, `withdrawal` | Tracks a payment waiting for quorum confirmation. `weight` accumulates as same-slot attestations arrive; `withdrawal` holds the payment details to execute once quorum is reached. |
-| `BuilderPendingWithdrawal` | `fee_recipient`, `amount`, `builder_index` | A confirmed payment queued for withdrawal. Created when quorum is reached; processed during builder withdrawal sweep. Uses `BuilderIndex` (not `ValidatorIndex`). |
-| `PayloadAttestationData` | `beacon_block_root`, `slot`, `payload_present`, `blob_data_available` | Data signed by PTC members. Indicates whether the voter saw the payload (`payload_present`) and blob data (`blob_data_available`) for a specific beacon block. |
-| `PayloadAttestation` | `aggregation_bits`, `data`, `signature` | Aggregated payload attestation included in blocks. `aggregation_bits` indicates which PTC members are included in this aggregate signature. |
-| `PayloadAttestationMessage` | `validator_index`, `data`, `signature` | Individual (non-aggregated) payload attestation from a single PTC member. Gossiped on p2p network, then aggregated for block inclusion. |
-| `IndexedPayloadAttestation` | `attesting_indices`, `data`, `signature` | Payload attestation with explicit validator indices (vs bitfield). Used internally for signature verification and slashing evidence. |
-| `ExecutionPayloadBid` | `parent_block_hash`, `parent_block_root`, `block_hash`, `prev_randao`, `fee_recipient`, `gas_limit`, `builder_index`, `slot`, `value`, `execution_payment`, `blob_kzg_commitments_root` | Builder's commitment to build a specific payload. `builder_index` is `BuilderIndex` type. `fee_recipient` and `gas_limit` must match proposer's `SignedProposerPreferences`. `execution_payment` is for trusted out-of-protocol auctions (must be 0 for gossip). |
-| `SignedExecutionPayloadBid` | `message`, `signature` | Signed wrapper around `ExecutionPayloadBid`. Builder signs with their BLS key from `state.builders[builder_index].pubkey`. |
-| `ExecutionPayloadEnvelope` | `payload`, `execution_requests`, `builder_index`, `beacon_block_root`, `slot`, `blob_kzg_commitments`, `state_root` | Container for the revealed execution payload. Links to the beacon block via `beacon_block_root`; includes `state_root` for stateless validation. `builder_index` is `BuilderIndex` type. |
-| `SignedExecutionPayloadEnvelope` | `message`, `signature` | Signed wrapper around `ExecutionPayloadEnvelope`. Builder signs to prove they authored the payload matching their bid. |
+**`Builder`**
+- **Fields:** `pubkey`, `version`, `execution_address`, `balance`, `deposit_epoch`, `withdrawable_epoch`
 
-#### p2p-interface.md - New Containers
+**Why it exists:** GLOAS creates a first-class role for block builders separate from validators. The `Builder` container stores everything needed to track a builder's identity and economic state:
+- `pubkey`: Their BLS public key for signing bids and envelopes
+- `execution_address`: Where they receive any refunds (from 0x03 credentials)
+- `balance`: Their staked ETH that backs their bid commitments
+- `deposit_epoch` / `withdrawable_epoch`: Lifecycle tracking for exit delays
 
-| Container | Fields | Description |
-|-----------|--------|-------------|
-| `ProposerPreferences` | `proposal_slot`, `validator_index`, `fee_recipient`, `gas_limit` | Proposer's preferences for their upcoming slot. Builders MUST use these exact `fee_recipient` and `gas_limit` values in their bids. |
-| `SignedProposerPreferences` | `message`, `signature` | Signed wrapper for proposer preferences. Broadcast on `proposer_preferences` topic at epoch start for next epoch's slots. |
+Unlike validators, builders don't attest or propose—they only build payloads and get paid for them.
 
-#### beacon-chain.md - Modified Containers
+---
 
-| Container | Changes | Description |
-|-----------|---------|-------------|
-| `BeaconBlockBody` | Added: `signed_execution_payload_bid`, `payload_attestations`. Removed: `execution_payload`, `blob_kzg_commitments`, `execution_requests` | Core structural change of ePBS. Proposers now include a builder's bid commitment instead of the actual payload. Payload attestations from previous slot's PTC are also included. |
-| `BeaconState` | Added: `builders`, `next_withdrawal_builder_index`, `latest_execution_payload_bid`, `execution_payload_availability`, `builder_pending_payments`, `builder_pending_withdrawals`, `latest_block_hash`, `payload_expected_withdrawals`. Removed: `latest_execution_payload_header` | New fields include separate builder registry (`builders: List[Builder]`), builder withdrawal sweep index, and fields for builder economics and payload tracking. |
+**`BuilderPendingPayment`**
+- **Fields:** `weight`, `withdrawal`
 
-#### fork-choice.md - New/Modified
+**Why it exists:** Builder payments don't execute immediately—they wait for quorum confirmation. This container tracks a payment in limbo:
+- `weight`: Accumulates as same-slot attestations arrive (Gwei of attesting stake)
+- `withdrawal`: The actual payment details (amount, recipient) to execute if quorum is reached
 
-| Container | Fields | Description |
-|-----------|--------|-------------|
-| `ForkChoiceNode` | `root`, `payload_status` | Represents a node in the fork choice tree. A single block root can have multiple nodes (PENDING, EMPTY, FULL) depending on whether its payload was delivered. Fork choice picks the best (root, status) pair. |
-| `LatestMessage` | `slot`, `root`, `payload_present` | Validator's most recent attestation for LMD-GHOST. Now tracks `slot` (not epoch) for finer granularity, and `payload_present` to weight EMPTY vs FULL nodes appropriately. |
-| `Store` | Added: `execution_payload_states`, `ptc_vote` | Fork choice store additions. `execution_payload_states` maps roots to post-payload states; `ptc_vote` tracks PTC votes per block for timeliness determination. |
+At each epoch boundary, the protocol checks: did `weight` reach 60% threshold? If yes, move to `builder_pending_withdrawals`. If no (or expired), discard.
 
-#### p2p-interface.md - Modified
+---
 
-| Container | Changes | Description |
-|-----------|---------|-------------|
-| `DataColumnSidecar` | Added: `slot`, `beacon_block_root`. Removed: `signed_block_header`, `kzg_commitments_inclusion_proof` | Simplified sidecar structure. Now references beacon block by root+slot rather than including full header. Removes redundant inclusion proof since commitments are in the envelope. |
+**`BuilderPendingWithdrawal`**
+- **Fields:** `fee_recipient`, `amount`, `builder_index`
+
+**Why it exists:** Once a payment reaches quorum, it's "confirmed" but not yet executed. This container queues the confirmed payment for actual ETH transfer:
+- `fee_recipient`: The proposer's address that receives the payment
+- `amount`: How much ETH to transfer
+- `builder_index`: Which builder is paying (to deduct from their balance)
+
+Withdrawals are processed during the withdrawal sweep, interleaved with regular validator withdrawals.
+
+---
+
+**`PayloadAttestationData`**
+- **Fields:** `beacon_block_root`, `slot`, `payload_present`, `blob_data_available`
+
+**Why it exists:** PTC members need to communicate what they observed. This is the data they sign:
+- `beacon_block_root`: Which block they're attesting about
+- `slot`: When (prevents replay across slots)
+- `payload_present`: "Did I see the execution payload?" (true/false)
+- `blob_data_available`: "Did I see the blob data?" (true/false)
+
+Two boolean fields allow PTC members to report partial delivery (payload but no blobs, or neither).
+
+---
+
+**`PayloadAttestation`** and **`PayloadAttestationMessage`**
+
+**Why they exist:** Like regular attestations, payload attestations have two forms:
+- `PayloadAttestationMessage`: Individual vote from one PTC member (gossiped on p2p)
+- `PayloadAttestation`: Aggregated form with `aggregation_bits` bitfield (included in blocks)
+
+Aggregation reduces block size—instead of 512 individual signatures, we get a few aggregates with combined BLS signatures.
+
+---
+
+**`IndexedPayloadAttestation`**
+- **Fields:** `attesting_indices`, `data`, `signature`
+
+**Why it exists:** For signature verification and slashing, we need explicit validator indices (not a bitfield). This container "expands" a `PayloadAttestation` to list actual indices, making verification straightforward.
+
+---
+
+**`ExecutionPayloadBid`**
+- **Fields:** `parent_block_hash`, `parent_block_root`, `block_hash`, `prev_randao`, `fee_recipient`, `gas_limit`, `builder_index`, `slot`, `value`, `execution_payment`, `blob_kzg_commitments_root`
+
+**Why it exists:** This is the core of ePBS—the builder's cryptographic commitment. Key fields:
+- `block_hash`: Commits to the EXACT payload the builder will reveal (can't change later)
+- `value`: How much the builder will pay the proposer (from their staked balance)
+- `blob_kzg_commitments_root`: Commits to the blob data too (for data availability)
+- `fee_recipient` / `gas_limit`: Must match proposer's preferences (ensures builder respects proposer's wishes)
+- `execution_payment`: Reserved for trusted out-of-protocol auctions (must be 0 for public gossip)
+
+Once this bid is included in a block, the builder is committed—they MUST reveal a payload matching `block_hash` or forfeit their payment.
+
+---
+
+**`SignedExecutionPayloadBid`** and **`SignedExecutionPayloadEnvelope`**
+
+**Why they exist:** Both bids and envelopes need signatures to prove authenticity:
+- Bid signature proves the builder authorized this commitment
+- Envelope signature proves the builder authored the revealed payload
+
+Without signatures, anyone could forge bids or claim to be a builder.
+
+---
+
+**`ExecutionPayloadEnvelope`**
+- **Fields:** `payload`, `execution_requests`, `builder_index`, `beacon_block_root`, `slot`, `blob_kzg_commitments`, `state_root`
+
+**Why it exists:** After the beacon block is published, the builder reveals their payload in this envelope:
+- `payload`: The actual execution payload (transactions, state changes)
+- `beacon_block_root`: Links this envelope to the specific block that included the bid
+- `blob_kzg_commitments`: The actual commitments (bid only had the root/hash)
+- `state_root`: Post-execution state root (enables stateless validation)
+
+The envelope lets nodes verify the payload matches the bid commitment and execute the state transition.
+
+---
+
+**`ProposerPreferences`** and **`SignedProposerPreferences`**
+
+**Why they exist:** Builders need to know proposer preferences BEFORE constructing bids:
+- `fee_recipient`: Where the proposer wants to receive payment
+- `gas_limit`: The proposer's preferred gas limit for the block
+
+Without this, builders would have to guess, and bids with wrong values would be rejected. Proposers broadcast signed preferences at epoch start so builders can prepare.
+
+---
+
+#### Modified Containers
+
+**`BeaconBlockBody`**
+- **Added:** `signed_execution_payload_bid`, `payload_attestations`
+- **Removed:** `execution_payload`, `blob_kzg_commitments`, `execution_requests`
+
+**Why it changed:** This is THE fundamental change of ePBS. Pre-GLOAS, proposers included the full execution payload in their block. Post-GLOAS:
+- Proposers include a BID (commitment) instead of the payload itself
+- The actual payload comes later from the builder
+- Proposers also include PTC votes from the previous slot
+
+This separation is what enables trustless proposer-builder separation—the proposer commits to a bid without seeing the payload contents.
+
+---
+
+**`BeaconState`**
+- **Added:** `builders`, `next_withdrawal_builder_index`, `latest_execution_payload_bid`, `execution_payload_availability`, `builder_pending_payments`, `builder_pending_withdrawals`, `latest_block_hash`, `payload_expected_withdrawals`
+- **Removed:** `latest_execution_payload_header`
+
+**Why it changed:** The state needs new fields for builder economics:
+- `builders`: The separate builder registry (like `validators` but for builders)
+- `builder_pending_payments`: Payments waiting for quorum
+- `builder_pending_withdrawals`: Confirmed payments waiting to execute
+- `execution_payload_availability`: Bitvector tracking which recent slots had payloads delivered
+- `latest_block_hash`: Tracks the chain of execution blocks for parent hash validation
+
+The removed `latest_execution_payload_header` is replaced by the bid/envelope system.
+
+---
+
+**`ForkChoiceNode`**
+- **Fields:** `root`, `payload_status`
+
+**Why it exists/changed:** Pre-GLOAS, each block root mapped to one fork choice node. Post-GLOAS, a single block root can have MULTIPLE nodes with different payload statuses:
+- (root, PENDING): Block seen, payload not yet resolved
+- (root, EMPTY): Block seen, payload didn't arrive
+- (root, FULL): Block seen, payload arrived and validated
+
+Fork choice now picks the best `(root, status)` pair, not just the best root. This lets the chain continue even if some builders withhold payloads.
+
+---
+
+**`LatestMessage`**
+- **Fields:** `slot`, `root`, `payload_present`
+- **Changed:** Now tracks `slot` (was `epoch`) and adds `payload_present`
+
+**Why it changed:** For LMD-GHOST fork choice, we track each validator's latest vote. GLOAS needs finer granularity:
+- `slot` instead of `epoch`: Same-slot vs previous-slot attestations behave differently
+- `payload_present`: The attester's view of payload availability affects which node their vote supports
+
+---
+
+**`Store`**
+- **Added:** `execution_payload_states`, `ptc_vote`
+
+**Why it changed:** Fork choice needs new tracking:
+- `execution_payload_states`: Maps block roots to post-payload-execution states (separate from post-block states)
+- `ptc_vote`: Tracks PTC votes per block to determine timeliness
+
+---
+
+**`DataColumnSidecar`**
+- **Added:** `slot`, `beacon_block_root`
+- **Removed:** `signed_block_header`, `kzg_commitments_inclusion_proof`
+
+**Why it changed:** Pre-GLOAS, sidecars needed a signed block header and merkle proof because PROPOSERS distributed them—you needed to verify the proposer authorized this data.
+
+Post-GLOAS, BUILDERS distribute sidecars. Verification is simpler:
+1. Look up the bid in the beacon block
+2. Check `hash(sidecar.kzg_commitments) == bid.blob_kzg_commitments_root`
+3. Verify `slot` and `beacon_block_root` match
+
+No proposer signature needed—the bid commitment handles authenticity.
+
+---
 
 ### 9.3 Functions
 
-#### beacon-chain.md - Predicates (New)
+#### Predicates (New)
 
-| Function | Description |
-|----------|-------------|
-| `is_builder_index(index)` | Returns True if the index has `BUILDER_INDEX_FLAG` set, indicating it's a `BuilderIndex` not a `ValidatorIndex`. Used to distinguish between the two registry types. |
-| `is_active_builder(state, builder_index)` | Returns True if the builder at the given index is active (deposited and not exited). Checks `state.builders[builder_index]` status. |
-| `is_builder_withdrawal_credential(withdrawal_credentials)` | Returns True if the withdrawal credentials start with `BUILDER_WITHDRAWAL_PREFIX` (0x03). Used to route deposits to builder registry. |
-| `is_attestation_same_slot(state, data)` | Returns True if the attestation is for the same slot as the current state. Used for builder payment quorum calculation (only same-slot attestations count). |
-| `is_valid_indexed_payload_attestation(state, indexed_payload_attestation)` | Validates a payload attestation: checks indices are sorted, within PTC bounds, signature is valid, and all attesters are in the PTC for that slot. |
-| `is_parent_block_full(state)` | Returns True if the parent block's payload was delivered (not empty). Checks `execution_payload_availability` bitvector for the parent slot. |
+**`is_builder_index(index)`**
 
-#### beacon-chain.md - Misc (New)
+**Why it exists:** When processing withdrawals or other operations, the system encounters indices that could be either validators or builders. This function checks the `BUILDER_INDEX_FLAG` bit to determine which registry the index refers to. Without this, code would incorrectly look up builder indices in the validator registry (or vice versa).
 
-| Function | Description |
-|----------|-------------|
-| `convert_builder_index_to_validator_index(builder_index)` | Converts a `BuilderIndex` to the format used in mixed contexts by setting `BUILDER_INDEX_FLAG`. Enables builders to be referenced alongside validators. |
-| `convert_validator_index_to_builder_index(validator_index)` | Extracts the `BuilderIndex` from a flagged index by clearing `BUILDER_INDEX_FLAG`. Inverse of `convert_builder_index_to_validator_index`. |
-| `get_pending_balance_to_withdraw_for_builder(state, builder_index)` | Returns total pending withdrawals for a specific builder. Sums amounts in `builder_pending_withdrawals` matching the builder index. |
-| `can_builder_cover_bid(state, builder_index, bid_value)` | Returns True if the builder has sufficient balance to cover a bid. Checks `builder.balance >= bid_value + pending_withdrawals`. |
-| `compute_balance_weighted_selection(state, indices, seed, size, shuffle)` | Selects `size` validators from `indices` weighted by effective balance. Core algorithm for PTC selection - validators with more stake are more likely to be selected. |
-| `compute_balance_weighted_acceptance(state, index, seed, i)` | Probabilistic acceptance function for balance-weighted sampling. Returns True if validator at `index` should be accepted based on their balance relative to MAX_EFFECTIVE_BALANCE. |
+---
 
-#### beacon-chain.md - Misc (Modified)
+**`is_active_builder(state, builder_index)`**
 
-| Function | Description |
-|----------|-------------|
-| `compute_proposer_indices(state, epoch, seed, indices)` | Refactored to use `compute_balance_weighted_selection`. Now shares selection logic with PTC computation for consistency. |
+**Why it exists:** Before accepting a bid, the protocol must verify the builder is active (deposited, not exited). An exited builder shouldn't be able to submit new bids. This function checks the builder's lifecycle state.
 
-#### beacon-chain.md - State Accessors (New)
+---
 
-| Function | Description |
-|----------|-------------|
-| `get_ptc(state, slot)` | Returns the 512-member Payload Timeliness Committee for a slot. Selects from that slot's attestation committees using balance-weighted sampling. |
-| `get_indexed_payload_attestation(state, payload_attestation)` | Converts aggregated payload attestation to indexed form. Expands aggregation bits to explicit validator indices for signature verification. |
-| `get_builder_payment_quorum_threshold(state)` | Calculates the 60% quorum threshold in Gwei. Returns `(per_slot_balance * 6) // 10` - the minimum attestation weight needed for builder payment. |
+**`is_builder_withdrawal_credential(withdrawal_credentials)`**
 
-#### beacon-chain.md - State Accessors (Modified)
+**Why it exists:** When processing deposits, the protocol needs to route them to the correct registry. This function checks if credentials start with `0x03`—if so, route to builder registry; otherwise, route to validator registry. This is the gatekeeper that creates the builder/validator split.
 
-| Function | Description |
-|----------|-------------|
-| `get_next_sync_committee_indices(state)` | Modified to use refactored `compute_proposer_indices`. Internal change for code reuse, no functional difference. |
-| `get_attestation_participation_flag_indices(state, data, inclusion_delay)` | Modified to handle same-slot attestations differently. Same-slot attestations update builder payment weight instead of normal participation flags. |
+---
 
-#### beacon-chain.md - Beacon State Mutators (New)
+**`is_attestation_same_slot(state, data)`**
 
-| Function | Description |
-|----------|-------------|
-| `initiate_builder_exit(state, builder_index)` | Initiates a builder's exit. Sets `builder.withdrawable_epoch` to current epoch + `MIN_BUILDER_WITHDRAWABILITY_DELAY` (~18 days). |
+**Why it exists:** Builder payments only count attestations from the SAME slot as the block. Why? Same-slot attestations prove the attester saw the block quickly, indicating network health. If the network is partitioned or the block was delayed, same-slot attestations won't happen, and the payment shouldn't execute. This function identifies which attestations count toward quorum.
 
-#### beacon-chain.md - State Transition (New)
+---
 
-| Function | Description |
-|----------|-------------|
-| `process_builder_pending_payments(state)` | Called during epoch processing. Clears expired pending payments (older than 2 epochs) and moves confirmed payments to withdrawal queue. |
-| `get_builder_withdrawals(state, withdrawal_index, prior_withdrawals)` | Generates builder payment withdrawals for the current slot. Called during withdrawal processing. |
-| `get_builders_sweep_withdrawals(state, withdrawal_index)` | Sweeps builder balances for regular withdrawals (not payments). Processes up to `MAX_BUILDERS_PER_WITHDRAWALS_SWEEP` builders per slot. |
-| `update_payload_expected_withdrawals(state, withdrawals)` | Updates `payload_expected_withdrawals` state field. Called during slot processing to pre-compute withdrawals the payload must include. |
-| `update_builder_pending_withdrawals(state, count)` | Removes processed builder withdrawals from state. Called after withdrawals are included to clean up the queue. |
-| `update_next_withdrawal_builder_index(state, count)` | Updates `next_withdrawal_builder_index` after processing builder withdrawals. Advances the sweep position. |
-| `verify_execution_payload_bid_signature(state, signed_bid)` | Verifies the builder's signature on their bid. Uses `DOMAIN_BEACON_BUILDER` and `state.builders[builder_index].pubkey`. |
-| `process_execution_payload_bid(state, block)` | Processes the bid in a beacon block. Validates bid consistency (slot, parent, builder active), verifies signature, and updates `latest_execution_payload_bid`. |
-| `process_payload_attestation(state, payload_attestation)` | Processes a payload attestation from a previous slot's PTC. Updates builder payment weight if payload was marked present and quorum is reached. |
-| `verify_execution_payload_envelope_signature(state, signed_envelope)` | Verifies the builder's signature on the payload envelope. Ensures the revealed payload was authored by the committed builder. |
-| `process_execution_payload(state, signed_envelope, execution_engine)` | Processes the revealed execution payload. Validates it matches the bid commitment, executes via execution engine, and updates state. |
-| `get_index_for_new_builder(state)` | Returns the next available index in `state.builders` for a new builder deposit. |
-| `get_builder_from_deposit(deposit)` | Creates a `Builder` object from deposit data. Extracts pubkey, execution_address from withdrawal_credentials, initializes balance. |
-| `add_builder_to_registry(state, builder)` | Adds a new builder to `state.builders`. Called when processing deposits with 0x03 credentials. |
-| `apply_deposit_for_builder(state, pubkey, withdrawal_credentials, amount)` | Processes a deposit for a builder. Either creates new builder or tops up existing builder's balance. |
+**`is_valid_indexed_payload_attestation(state, indexed_payload_attestation)`**
 
-#### beacon-chain.md - State Transition (Modified)
+**Why it exists:** Before accepting a payload attestation, we must verify its basic validity:
+- Are the indices non-empty?
+- Are the indices sorted? (prevents double-counting in aggregation)
+- Is the aggregate BLS signature valid?
 
-| Function | Description |
-|----------|-------------|
-| `process_slot(state)` | Modified to update `payload_expected_withdrawals` each slot. Pre-computes withdrawals so payloads can be validated against expected values. |
-| `process_epoch(state)` | Modified to call `process_builder_pending_payments`. Handles expiration and confirmation of builder payments at epoch boundaries. |
-| `get_expected_withdrawals(state)` | Modified to include builder withdrawals. Interleaves regular validator withdrawals with builder payment withdrawals. |
-| `process_withdrawals(state)` | Modified to process builder withdrawals. Calls `update_builder_pending_withdrawals` to clear processed payments from queue. |
-| `process_operations(state, body)` | Modified to process `payload_attestations`. Iterates through attestations and calls `process_payload_attestation` for each. |
-| `process_attestation(state, attestation)` | Modified for same-slot attestation handling. Same-slot attestations contribute to builder payment weight instead of normal rewards. |
-| `process_proposer_slashing(state, proposer_slashing)` | Modified to forfeit builder's pending payments on slash. If slashed validator has pending payments, they're cancelled. |
+Note: This function does NOT verify PTC membership—it only checks structural validity and signature. PTC membership verification happens separately (e.g., in `on_payload_attestation_message` in fork-choice).
 
-#### fork-choice.md - Helpers (New)
+---
 
-| Function | Description |
-|----------|-------------|
-| `notify_ptc_messages(store, state, payload_attestations)` | Processes payload attestations from blocks. Extracts individual votes and calls `on_payload_attestation_message` for each to update fork choice. |
-| `is_payload_timely(store, root)` | Returns True if payload got sufficient PTC votes (>256 of 512). Checks `store.ptc_vote` to determine if payload was delivered on time. |
-| `get_parent_payload_status(store, block)` | Returns the payload status (EMPTY/FULL) of a block's parent. Used to determine valid child states in fork choice tree. |
-| `is_parent_node_full(store, block)` | Returns True if the block's parent has FULL payload status. Convenience function for checking parent payload availability. |
-| `is_supporting_vote(store, node, message)` | Returns True if an attestation message supports a fork choice node. Considers both block root ancestry AND payload status compatibility. |
-| `get_attestation_score(store, node)` | Calculates the attestation score for a node (weight from attestations only, no proposer boost). Extracted for reuse in `get_weight` and `is_head_weak`. |
-| `should_extend_payload(store, root)` | Decides whether to extend with FULL or EMPTY payload status. Returns True (FULL) if payload was timely, parent was FULL, and payload state exists. |
-| `get_payload_status_tiebreaker(store, node)` | Returns tiebreaker value (0, 1, or 2) for equal-weight nodes. FULL nodes beat PENDING which beat EMPTY, incentivizing payload delivery. |
-| `get_node_children(store, blocks, node)` | Returns valid child nodes for a parent node. Generates appropriate (root, status) pairs based on parent's payload status. |
-| `get_payload_attestation_due_ms(epoch)` | Returns PTC attestation deadline in milliseconds (9000ms = 75% of slot). Used for timing PTC votes. |
+**`is_parent_block_full(state)`**
 
-#### fork-choice.md - Helpers (Modified)
+**Why it exists:** Some protocol rules depend on whether the parent block's payload was delivered. This function checks by comparing:
+```
+state.latest_execution_payload_bid.block_hash == state.latest_block_hash
+```
+If the bid's committed `block_hash` equals the chain's `latest_block_hash`, the payload was successfully revealed and processed. Must be called BEFORE processing the current block's bid.
 
-| Function | Description |
-|----------|-------------|
-| `update_latest_messages(store, attesting_indices, attestation)` | Modified to track `payload_present` from attestation. Latest messages now include whether attester saw the payload. |
-| `get_forkchoice_store(anchor_state, anchor_block)` | Modified to initialize new store fields. Sets up `execution_payload_states` and `ptc_vote` mappings. |
-| `get_ancestor(store, root, slot)` | Modified to work with ForkChoiceNodes. Traverses (root, status) pairs when finding ancestors. |
-| `get_checkpoint_block(store, root, epoch)` | Modified to return ForkChoiceNode. Returns the block at epoch boundary with appropriate payload status. |
-| `get_weight(store, node)` | Modified to use `get_attestation_score`. Weights EMPTY vs FULL nodes differently; attestations supporting specific payload status only count for matching nodes. |
-| `get_head(store)` | Modified to return ForkChoiceNode (root + status). Finds highest-weight leaf considering both block and payload status. |
-| `get_attestation_due_ms(epoch)` | Modified for GLOAS timing (3000ms = 25% vs previous 33%). Earlier deadline gives builders more time. |
-| `get_aggregate_due_ms(epoch)` | Modified for GLOAS timing (6000ms = 50%). Aligned with new slot timeline. |
-| `get_sync_message_due_ms(epoch)` | Modified for GLOAS timing (3000ms = 25%). Aligned with attestation deadline. |
-| `get_contribution_due_ms(epoch)` | Modified for GLOAS timing (6000ms = 50%). Aligned with aggregation deadline. |
+---
 
-#### fork-choice.md - Handlers (New)
+#### Helper Functions (New)
 
-| Function | Description |
-|----------|-------------|
-| `on_execution_payload(store, signed_envelope)` | Handler for received execution payloads. Validates envelope matches committed bid, processes through execution engine, updates `execution_payload_states`. |
-| `on_payload_attestation_message(store, ptc_message, is_from_block)` | Handler for PTC attestation messages. Updates `store.ptc_vote` bitmap, may trigger payload status resolution from PENDING to FULL/EMPTY. |
+**`can_builder_cover_bid(state, builder_index, bid_value)`**
 
-#### fork-choice.md - Handlers (Modified)
+**Why it exists:** Before accepting a bid into a block, we must verify the builder can actually pay. This function checks:
+```
+min_balance = MIN_DEPOSIT_AMOUNT + pending_withdrawals_amount
+available = builder_balance - min_balance
+return available >= bid_amount
+```
+A builder can't bid more than they can afford, preventing default scenarios.
 
-| Function | Description |
-|----------|-------------|
-| `on_block(store, signed_block)` | Modified for ePBS block structure. Processes bid instead of payload, handles payload attestations from block body, initializes PENDING status. |
-| `validate_on_attestation(store, attestation, is_from_block)` | Modified to validate payload status in attestation. Ensures attested (root, status) pair is valid in fork choice tree. |
+---
 
-#### validator.md - Functions (New)
+**`compute_balance_weighted_selection(state, indices, seed, size, shuffle)`**
 
-| Function | Description |
-|----------|-------------|
-| `get_ptc_assignment(state, epoch, validator_index)` | Returns the slot a validator is assigned to the PTC, or None if not assigned. Validators check this to know when to send payload attestations. |
-| `get_payload_attestation_message_signature(state, attestation, privkey)` | Signs a payload attestation message with `DOMAIN_PTC_ATTESTER`. Returns the BLS signature for the PTC vote. |
-| `get_upcoming_proposal_slots(state, validator_index)` | Returns slots in the next epoch where validator is proposing. Used to broadcast `SignedProposerPreferences` for upcoming slots. |
-| `get_proposer_preferences_signature(state, preferences, privkey)` | Signs proposer preferences with `DOMAIN_PROPOSER_PREFERENCES`. Proposers sign their fee_recipient and gas_limit preferences. |
+**Why it exists:** PTC selection must be sybil-resistant—validators with more stake should be proportionally more likely to be selected. Simple random selection would let someone with 1000 validators dominate the PTC. Balance-weighted selection ensures a validator with 64 ETH is twice as likely to be selected as one with 32 ETH. This is the core algorithm powering fair PTC composition.
 
-#### validator.md - Functions (Modified)
+---
 
-| Function | Description |
-|----------|-------------|
-| `prepare_execution_payload(state, safe_block_hash, ...)` | Modified to prepare payload for builders. Builders use this when constructing payloads to match their bid commitments. |
-| `get_data_column_sidecars_from_column_sidecar(sidecar, cells_and_kzg_proofs)` | Modified for new sidecar structure. Handles simplified `DataColumnSidecar` format without block header. |
+**`get_ptc(state, slot)`**
 
-#### builder.md - Functions (New)
+**Why it exists:** Given a slot, which 512 validators form the Payload Timeliness Committee? This function computes the PTC by applying balance-weighted selection to that slot's attestation committees. The result is deterministic (same seed → same PTC), allowing all nodes to agree on committee membership.
 
-| Function | Description |
-|----------|-------------|
-| `get_execution_payload_bid_signature(state, bid, privkey)` | Signs an execution payload bid with `DOMAIN_BEACON_BUILDER`. Returns BLS signature using builder's withdrawal credential key. |
-| `get_data_column_sidecars(beacon_block_root, slot, kzg_commitments, ...)` | Generates data column sidecars for blob data. Builders create these alongside payload envelopes for data availability. |
-| `get_data_column_sidecars_from_block(signed_block, blob_kzg_commitments, ...)` | Alternative sidecar generation from block context. Used when commitments come from signed envelope rather than block. |
-| `get_execution_payload_envelope_signature(state, envelope, privkey)` | Signs an execution payload envelope with `DOMAIN_BEACON_BUILDER`. Builder signs to prove payload authorship. |
+---
 
-#### p2p-interface.md - Functions (Modified)
+**`get_builder_payment_quorum_threshold(state)`**
 
-| Function | Description |
-|----------|-------------|
-| `compute_fork_version(epoch)` | Modified to return `GLOAS_FORK_VERSION` after GLOAS activation. Used for fork digest in p2p message validation. |
-| `verify_data_column_sidecar(sidecar)` | Modified for new sidecar structure. Validates sidecars using `beacon_block_root` + `slot` instead of block header. |
+**Why it exists:** How much attestation weight is needed to confirm a payment? This function calculates the 60% threshold in Gwei:
+```
+(total_active_balance / SLOTS_PER_EPOCH) * 6 / 10
+```
+The result is compared against accumulated `weight` in pending payments to determine if quorum is reached.
 
-#### fork.md - Functions (New)
+---
 
-| Function | Description |
-|----------|-------------|
-| `upgrade_to_gloas(pre)` | Upgrades beacon state from Fulu to GLOAS. Initializes new state fields (`latest_execution_payload_bid`, `builder_pending_payments`, etc.) with appropriate defaults. |
+#### State Transition Functions (New)
+
+**`process_slot(state)`** — MODIFIED
+
+**Why it changed:** Each slot, the protocol must clear the execution payload availability flag for the NEXT slot. This is done by setting `execution_payload_availability[(slot + 1) % SLOTS_PER_HISTORICAL_ROOT] = 0`.
+
+**The reason:** The availability bitvector tracks which recent slots had their payloads delivered. Before a new slot begins, we reset its flag to 0 (not available). When a payload is later processed for that slot, it gets set to 1. This allows the protocol to track payload delivery history for recent slots.
+
+---
+
+**`process_epoch(state)`** — MODIFIED
+
+**Why it changed:** Added call to `process_builder_pending_payments()`.
+
+**The reason:** Pending payments have a lifecycle:
+1. Created when a bid is included in a block
+2. Accumulate weight as same-slot attestations arrive
+3. At epoch boundary: check if quorum reached → move to withdrawal queue OR expired → discard
+
+Epoch processing is the natural place for this "end of period" accounting.
+
+---
+
+**`process_execution_payload_bid(state, block)`**
+
+**Why it exists:** When a beacon block arrives containing a builder's bid, this function:
+1. Validates the bid (correct slot, correct parent, builder is active)
+2. Verifies the builder's signature
+3. Checks the builder can cover the bid value
+4. Creates a `BuilderPendingPayment` entry
+5. Updates `latest_execution_payload_bid` in state
+
+This is the "commit" phase—the builder is now on the hook for this bid.
+
+---
+
+**`process_execution_payload(state, signed_envelope, execution_engine)`**
+
+**Why it exists:** When the payload envelope arrives (after the beacon block), this function:
+1. Verifies the envelope matches the committed bid (`block_hash` must match)
+2. Verifies the builder's signature
+3. Sends the payload to the execution engine for validation
+4. Updates state with the execution results
+
+This is the "reveal" phase—the builder proves they have a valid payload matching their commitment.
+
+---
+
+**`process_payload_attestation(state, payload_attestation)`**
+
+**Why it exists:** When processing a block, we encounter PTC votes from the PREVIOUS slot. This function validates:
+1. The attestation references the parent beacon block (`data.beacon_block_root == state.latest_block_header.parent_root`)
+2. The attestation is for the previous slot (`data.slot + 1 == state.slot`)
+3. The aggregate signature is valid (via `is_valid_indexed_payload_attestation`)
+
+Note: This function only validates PTC attestations for inclusion—it does NOT update payment weights. Payment weight accumulation happens separately in `process_attestation` for same-slot regular attestations.
+
+---
+
+**`process_attestation(state, attestation)`** — MODIFIED
+
+**Why it changed:** Same-slot attestations now serve double duty:
+- Normal duty: Signal which block the attester considers head
+- New duty: Contribute to builder payment quorum
+
+The modification adds: if this attestation is for the current slot, add the attesters' effective balance to the pending payment's `weight` field.
+
+---
+
+**`get_expected_withdrawals(state)`** — MODIFIED
+
+**Why it changed:** Withdrawals now include multiple new categories. The function builds the withdrawal list in this order:
+1. **Builder withdrawals** (`get_builder_withdrawals`): Payments from builders to proposers that reached quorum
+2. **Partial withdrawals** (`get_pending_partial_withdrawals`): Validator partial balance withdrawals (existing)
+3. **Builder sweep withdrawals** (`get_builders_sweep_withdrawals`): Builder balance withdrawals when exiting
+4. **Validator sweep withdrawals** (`get_validators_sweep_withdrawals`): Regular validator sweep (existing)
+
+This ordering ensures builder payments are processed first, then existing withdrawal types, then builder exits.
+
+---
+
+**`process_proposer_slashing(state, proposer_slashing)`** — MODIFIED
+
+**Why it changed:** If a proposer is slashed, any pending builder payments TO that proposer should be cancelled. Why? The proposer committed a slashable offense—they shouldn't profit from a block they proposed maliciously. The modification: forfeit the builder's pending payment (builder keeps their stake, but proposer doesn't get paid).
+
+---
+
+#### Fork Choice Functions
+
+**`on_block(store, signed_block)`** — MODIFIED
+
+**Why it changed:** Blocks no longer contain execution payloads—they contain bids. The handler now:
+1. Processes the bid commitment (not a full payload)
+2. Creates a node with `PAYLOAD_STATUS_PENDING` (waiting for payload to arrive)
+3. Processes any payload attestations in the block body
+
+The block is initially "incomplete" until the payload arrives via `on_execution_payload`.
+
+---
+
+**`on_execution_payload(store, signed_envelope)`** — NEW
+
+**Why it exists:** This is the handler for when a payload envelope arrives (separate from the beacon block). It:
+1. Finds the beacon block this payload belongs to (via `beacon_block_root`)
+2. Verifies the payload matches the bid commitment
+3. Executes the payload through the execution engine
+4. Stores the post-payload state in `execution_payload_states`
+5. Updates the node's status from PENDING to FULL
+
+This handler bridges the gap between bid commitment and payload reveal.
+
+---
+
+**`on_payload_attestation_message(store, ptc_message, is_from_block)`** — NEW
+
+**Why it exists:** When PTC votes arrive (via gossip or in blocks), this handler:
+1. Verifies the vote is from a valid PTC member
+2. Updates `store.ptc_vote[block_root]` bitmap
+3. May trigger resolution from PENDING to EMPTY/FULL based on vote count
+
+The `is_from_block` flag distinguishes gossip (must be current slot) from block inclusion (can be previous slot).
+
+---
+
+**`get_head(store)`** — MODIFIED
+
+**Why it changed:** Fork choice now returns a `ForkChoiceNode` (root + payload_status), not just a root. The algorithm:
+1. Start from justified checkpoint
+2. At each level, pick the child with highest weight
+3. Consider (root, EMPTY) and (root, FULL) as different nodes
+4. Use `get_payload_status_tiebreaker` if weights are equal
+
+Note: The tiebreaker logic is nuanced—FULL doesn't always beat EMPTY. For previous-slot payloads, it depends on `should_extend_payload`.
+
+---
+
+**`is_supporting_vote(store, node, message)`** — NEW
+
+**Why it exists:** Does an attestation support a particular fork choice node? It's not just about ancestry anymore—we also need to check payload status compatibility:
+- If attester voted `payload_present=true`, their vote supports FULL nodes
+- If attester voted `payload_present=false`, their vote supports EMPTY nodes
+
+This function encapsulates this two-dimensional vote matching.
+
+---
+
+**`should_extend_payload(store, root)`** — NEW
+
+**Why it exists:** Decides whether to extend a previous-slot block's FULL version. Returns true if ANY of:
+1. `is_payload_timely(store, root)` — PTC majority voted the payload was timely
+2. `proposer_boost_root == Root()` — No proposer boost is currently set
+3. `store.blocks[proposer_boost_root].parent_root != root` — Proposer boost conflicts with this root
+4. `is_parent_node_full(store, store.blocks[proposer_boost_root])` — Proposer boost block's parent has FULL status
+
+This determines whether fork choice should favor FULL over EMPTY for a given block.
+
+---
+
+**`get_payload_status_tiebreaker(store, node)`** — NEW
+
+**Why it exists:** When two nodes have equal attestation weight, this provides a tiebreaker value. The logic is nuanced:
+
+- **If PENDING**, or **block is NOT from previous slot**: Return raw status (PENDING=0, EMPTY=1, FULL=2)
+- **If block IS from previous slot**:
+  - EMPTY → returns 1
+  - FULL → returns 2 if `should_extend_payload(root)` is true, else **0**
+
+Key insight: FULL doesn't always win! If `should_extend_payload` returns false, FULL gets 0 (lowest priority), making EMPTY preferred. This prevents the chain from extending payloads that weren't timely or conflict with proposer boost.
+
+---
+
+**Timing Functions** — MODIFIED
+
+Functions like `get_attestation_due_ms`, `get_aggregate_due_ms`, etc. are all modified to implement the new GLOAS slot timeline:
+- Attestations: 25% (was 33%) — earlier to leave room for PTC
+- Aggregates: 50% (was 66%) — proportionally earlier
+- PTC votes: 75% — new deadline for payload attestations
+
+The shift gives builders and PTC more time while maintaining the overall slot structure.
+
+#### Validator Functions
+
+**`get_ptc_assignment(state, epoch, validator_index)`** — NEW
+
+**Why it exists:** Validators need to know if they're on PTC duty for any slot. At epoch start, each validator calls this to check: "Am I on the PTC for any slot next epoch?" If yes, they must prepare to submit a payload attestation at 75% of that slot. Without this function, validators wouldn't know their PTC responsibilities.
+
+---
+
+**`get_upcoming_proposal_slots(state, validator_index)`** — NEW
+
+**Why it exists:** Proposers must broadcast their preferences (fee_recipient, gas_limit) BEFORE builders construct bids. This function tells proposers which slots they'll propose in the next epoch, so they know when to broadcast `SignedProposerPreferences`.
+
+---
+
+#### Builder Functions
+
+**`get_execution_payload_bid_signature(state, bid, privkey)`** — NEW
+
+**Why it exists:** Builders must sign their bids to prove authenticity. This function creates the BLS signature using `DOMAIN_BEACON_BUILDER` and the builder's private key. Without valid signatures, bids would be rejected by the network.
+
+---
+
+**`get_data_column_sidecars(beacon_block_root, slot, kzg_commitments, ...)`** — NEW
+
+**Why it exists:** In GLOAS, BUILDERS (not proposers) distribute blob data. After revealing a payload, the builder must also distribute DataColumnSidecars for data availability sampling. This function generates the sidecars from the blob data, ready for gossip.
+
+---
+
+**`get_execution_payload_envelope_signature(state, envelope, privkey)`** — NEW
+
+**Why it exists:** When revealing a payload, the builder must sign the envelope to prove they authored it. This signature links the revealed payload to the builder who committed via the bid. Anyone can verify the signature matches the `builder_index` in the envelope.
+
+---
+
+#### Fork Upgrade
+
+**`upgrade_to_gloas(pre)`** — NEW
+
+**Why it exists:** At `GLOAS_FORK_EPOCH`, the beacon state must transition from Fulu format to GLOAS format. This function:
+1. Copies all existing state fields
+2. Initializes new fields with appropriate defaults:
+   - `builders`: Empty list (no builders registered yet)
+   - `builder_pending_payments`: Pre-allocated array of `2 * SLOTS_PER_EPOCH` empty entries (covers current + previous epoch)
+   - `execution_payload_availability`: All 1s (`0b1` for each slot)—assumes all pre-fork payloads were delivered
+   - `latest_block_hash`: Set to `pre.latest_execution_payload_header.block_hash` (continuity from pre-fork)
+3. Removes `latest_execution_payload_header` (replaced by bid/envelope system)
+
+This is the one-time migration that enables ePBS.
+
+---
 
 ### 9.4 Gossip Topics
 
-#### New Global Topics
+#### New Topics
 
-| Topic | Message Type | Description |
-|-------|--------------|-------------|
-| `execution_payload_bid` | `SignedExecutionPayloadBid` | Builders broadcast their bids on this topic. Proposers subscribe to receive bids and select the highest-value valid bid for inclusion in their block. Bids must wait for `SignedProposerPreferences` first. |
-| `execution_payload` | `SignedExecutionPayloadEnvelope` | Builders broadcast revealed payloads on this topic after seeing their bid included. Validators receive payloads to update fork choice and execute state transitions. |
-| `payload_attestation_message` | `PayloadAttestationMessage` | PTC members broadcast their individual votes on payload timeliness. Aggregators collect these for block inclusion; fork choice uses them to determine payload status. |
-| `proposer_preferences` | `SignedProposerPreferences` | Proposers broadcast their fee_recipient and gas_limit preferences at epoch start for next epoch's slots. Builders must match these values in their bids. |
+**`execution_payload_bid`** — Message: `SignedExecutionPayloadBid`
+
+**Why it exists:** Builders need a way to advertise their bids to proposers. This topic creates a public marketplace where:
+- Builders broadcast bids for upcoming slots
+- Proposers listen and select the highest-value valid bid
+- Other nodes can validate bids for fork choice purposes
+
+**Important:** Builders should wait for `SignedProposerPreferences` before bidding—bids with wrong fee_recipient/gas_limit will be rejected.
+
+---
+
+**`execution_payload`** — Message: `SignedExecutionPayloadEnvelope`
+
+**Why it exists:** After a beacon block is published with a bid, the winning builder must reveal their payload. This topic is where:
+- The builder broadcasts the actual execution payload
+- All nodes receive it to complete the block
+- Fork choice updates from PENDING to FULL status
+
+Timing is critical—builders should reveal quickly so PTC can vote "present."
+
+---
+
+**`payload_attestation_message`** — Message: `PayloadAttestationMessage`
+
+**Why it exists:** PTC members need to broadcast their observations about payload timeliness. This topic carries:
+- Individual votes on whether the payload arrived
+- Votes on whether blob data is available
+- Data that will be aggregated for block inclusion
+
+Aggregators collect these messages and create `PayloadAttestation` aggregates for the next block.
+
+---
+
+**`proposer_preferences`** — Message: `SignedProposerPreferences`
+
+**Why it exists:** Before builders can create valid bids, they need to know what the proposer wants:
+- `fee_recipient`: Where to send payment
+- `gas_limit`: Maximum gas for the payload
+
+Proposers broadcast preferences at epoch start for all their slots in the next epoch. Without this, builders would have to guess (and likely be rejected).
+
+---
 
 #### Modified Topics
 
-| Topic | Changes | Description |
-|-------|---------|-------------|
-| `beacon_block` | Modified message type | Now uses GLOAS `SignedBeaconBlock` which contains bid commitment instead of execution payload. Validation rules updated accordingly. |
-| `beacon_aggregate_and_proof` | Added index validation | Aggregates must validate that the attested `index` (EMPTY=0, FULL=1) is consistent with the fork choice tree's payload status for that block. |
-| `beacon_attestation_{subnet_id}` | Added index validation | Individual attestations must specify valid payload status index. Rejects attestations for invalid (root, status) combinations. |
-| `data_column_sidecar_{subnet_id}` | Modified validation | Updated to validate new sidecar structure using `beacon_block_root` + `slot` instead of signed block header. |
+**`beacon_block`** — MODIFIED
+
+**Why it changed:** GLOAS blocks no longer contain execution payloads—they contain bids. Validation rules now:
+- Check the bid is valid (builder active, sufficient balance)
+- Verify bid signature
+- Don't expect an execution payload in the block body
+
+The block is smaller and arrives faster; the payload follows separately.
+
+---
+
+**`beacon_attestation_{subnet_id}`** and **`beacon_aggregate_and_proof`** — MODIFIED
+
+**Why they changed:** Attestations now signal payload status via the `index` field:
+- `index = 0`: Attester saw EMPTY block (or same-slot attestation)
+- `index = 1`: Attester saw FULL block
+
+Validation must check that the attested `(root, index)` pair is valid in fork choice. You can't attest to FULL status for a block whose payload never arrived.
+
+---
+
+**`data_column_sidecar_{subnet_id}`** — MODIFIED
+
+**Why it changed:** Sidecars now come from BUILDERS, not proposers. Validation uses:
+- `beacon_block_root` + `slot` to identify the block
+- Check `hash(kzg_commitments) == bid.blob_kzg_commitments_root`
+
+No proposer signature needed—the bid commitment provides authenticity.
+
+---
 
 ### 9.5 Req/Resp Methods
 
 #### New Methods
 
-| Method | Protocol | Description |
-|--------|----------|-------------|
-| `ExecutionPayloadEnvelopesByRange` v1 | `/eth2/beacon_chain/req/execution_payload_envelopes_by_range/1/` | Request payloads for a range of slots. Used during sync to fetch execution payloads separately from beacon blocks. Request: `{start_slot, count}`. Response: `List[SignedExecutionPayloadEnvelope]`. |
-| `ExecutionPayloadEnvelopesByRoot` v1 | `/eth2/beacon_chain/req/execution_payload_envelopes_by_root/1/` | Request specific payloads by beacon block root. Used for targeted payload fetching when syncing or recovering from missed gossip. Request: `List[Root]`. Response: `List[SignedExecutionPayloadEnvelope]`. |
+**`ExecutionPayloadEnvelopesByRange`** v1
+
+**Why it exists:** During sync, nodes need to fetch execution payloads for historical slots. Since payloads are no longer embedded in blocks, a new method is needed. Request a range of slots; receive the corresponding payload envelopes.
+
+**Use case:** Node syncing from genesis needs both blocks AND payloads. It fetches blocks via `BeaconBlocksByRange`, then payloads via this method.
+
+---
+
+**`ExecutionPayloadEnvelopesByRoot`** v1
+
+**Why it exists:** Sometimes you need specific payloads by block root:
+- You received a block but missed the payload on gossip
+- PTC voted "present" but you never saw the payload
+- You're reconstructing state and need the execution data
+
+Request roots; receive matching envelopes. More targeted than by-range.
+
+---
 
 #### Updated Methods
 
-| Method | Changes | Description |
-|--------|---------|-------------|
-| `BeaconBlocksByRange` v2 | Added GLOAS support | Returns GLOAS-format blocks (with bid, without payload) when requesting slots after `GLOAS_FORK_EPOCH`. Clients must separately fetch payloads via envelope methods. |
-| `BeaconBlocksByRoot` v2 | Added GLOAS support | Returns GLOAS-format blocks by root. Response type depends on the block's fork version - GLOAS blocks contain bids, pre-GLOAS blocks contain payloads. |
+**`BeaconBlocksByRange`** v2 and **`BeaconBlocksByRoot`** v2 — MODIFIED
+
+**Why they changed:** Post-GLOAS blocks have a different structure (bid instead of payload). These methods now:
+- Return GLOAS-format blocks for slots after `GLOAS_FORK_EPOCH`
+- Return pre-GLOAS format for earlier slots
+- Clients must separately fetch payloads via envelope methods
+
+This maintains backwards compatibility while supporting the new block structure.
 
 ---
 

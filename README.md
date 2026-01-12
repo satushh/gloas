@@ -1,11 +1,27 @@
+# GLOAS: Enshrined Proposer-Builder Separation (ePBS)
+
+A Complete Visual Guide
+
+---
+
+## Table of Contents
+
+1. [The Big Picture: What Problem Does GLOAS Solve?](#1-the-big-picture-what-problem-does-gloas-solve)
+2. [Before vs After: Structural Changes](#2-before-vs-after-structural-changes)
+3. [Slot Timeline: What Happens When?](#3-slot-timeline-what-happens-when)
+4. [New Data Structures](#4-new-data-structures)
+5. [Fork Choice Changes: Empty vs Full Blocks](#5-fork-choice-changes-empty-vs-full-blocks)
+6. [Networking & P2P Changes](#6-networking--p2p-changes)
+7. [Actor Perspectives](#7-actor-perspectives)
+8. [Putting It All Together](#8-putting-it-all-together)
+9. [Spec Reference Index](#9-spec-reference-index)
+10. [FAQ](#10-faq)
+
+---
+
+## 1. THE BIG PICTURE: What Problem Does GLOAS Solve?
+
 ```text
-GLOAS: Enshrined Proposer-Builder Separation (ePBS)
-
-  A Complete Visual Guide
-
-  ---
-  1. THE BIG PICTURE: What Problem Does GLOAS Solve?
-
   The Current Problem (Pre-GLOAS)
 
   ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -75,9 +91,11 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   Key insight: The protocol itself becomes the escrow through cryptographic commitments and economic penalties.
 
   ---
+```
 
-⏺ 2. BEFORE vs AFTER: Structural Changes
+## 2. BEFORE vs AFTER: Structural Changes
 
+```text
   2.1 BeaconBlockBody Changes
 
   ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -202,9 +220,11 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   └─────────────────────────────────────────────────────────────────────────────┘
 
   ---
+```
 
-⏺ 3. SLOT TIMELINE: What Happens When?
+## 3. SLOT TIMELINE: What Happens When?
 
+```text
   3.1 The New Slot Structure
 
   ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -425,9 +445,11 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   └─────────────────────────────────────────────────────────────────────────────┘
 
   ---
+```
 
-⏺ 4. NEW DATA STRUCTURES
+## 4. NEW DATA STRUCTURES
 
+```text
   4.1 The Execution Payload Bid
 
   ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -713,9 +735,11 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   └─────────────────────────────────────────────────────────────────────────────┘
 
   ---
+```
 
-⏺ 5. FORK CHOICE CHANGES: Empty vs Full Blocks
+## 5. FORK CHOICE CHANGES: Empty vs Full Blocks
 
+```text
   5.1 The New Concept: Payload Status
 
   ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1083,9 +1107,11 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   └─────────────────────────────────────────────────────────────────────────────┘
 
   ---
+```
 
-⏺ 6. NETWORKING & P2P CHANGES
+## 6. NETWORKING & P2P CHANGES
 
+```text
   6.1 New Gossip Topics
 
   ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1346,9 +1372,11 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   └─────────────────────────────────────────────────────────────────────────────┘
 
   ---
+```
 
-⏺ 7. ACTOR PERSPECTIVES
+## 7. ACTOR PERSPECTIVES
 
+```text
   7.1 How to Become a Builder
 
   ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1738,9 +1766,11 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   └─────────────────────────────────────────────────────────────────────────────┘
 
   ---
+```
 
-⏺ 8. PUTTING IT ALL TOGETHER
+## 8. PUTTING IT ALL TOGETHER
 
+```text
   8.1 Complete Message Flow Diagram
 
   ┌─────────────────────────────────────────────────────────────────────────────┐

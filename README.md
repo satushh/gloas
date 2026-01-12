@@ -1354,68 +1354,93 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │                    BECOMING A BUILDER: Step by Step                         │
   ├─────────────────────────────────────────────────────────────────────────────┤
   │                                                                             │
-  │  STEP 1: Create Builder Withdrawal Credentials                              │
-  │  ═════════════════════════════════════════════                              │
+  │  IMPORTANT: Builders are NOT validators!                                    │
+  │  ═══════════════════════════════════════                                    │
   │                                                                             │
-  │  Regular Validator:                   Builder:                              │
-  │  ┌──────────────────────────┐        ┌──────────────────────────┐          │
-  │  │ withdrawal_credentials   │        │ withdrawal_credentials   │          │
-  │  │                          │        │                          │          │
-  │  │ 0x01 + 11 zeros + addr   │        │ 0x03 + 11 zeros + addr   │          │
-  │  │ ────                     │        │ ────                     │          │
-  │  │ BLS withdrawal prefix    │        │ BUILDER_WITHDRAWAL_PREFIX│          │
-  │  │                          │        │                          │          │
-  │  │ OR                       │        │ The 0x03 prefix is what  │          │
-  │  │                          │        │ makes you a BUILDER!     │          │
-  │  │ 0x02 + 11 zeros + addr   │        │                          │          │
-  │  │ ────                     │        │ Builders also get        │          │
-  │  │ Compounding prefix       │        │ compounding benefits     │          │
-  │  └──────────────────────────┘        └──────────────────────────┘          │
+  │  In GLOAS, builders are separate staked actors with their own registry.     │
+  │  They deposit stake but do NOT perform validation duties.                   │
   │                                                                             │
-  │  STEP 2: Submit Deposit                                                     │
-  │  ══════════════════════                                                     │
+  │  ┌───────────────────────────────────────────────────────────────────────┐ │
+  │  │                                                                       │ │
+  │  │  VALIDATORS                          BUILDERS                         │ │
+  │  │  ══════════                          ════════                         │ │
+  │  │  • Stored in state.validators        • Stored in state.builders       │ │
+  │  │  • Use ValidatorIndex                • Use BuilderIndex               │ │
+  │  │  • Attest, propose, sync committee   • Only build & reveal payloads   │ │
+  │  │  • Earn attestation rewards          • Earn MEV profits               │ │
+  │  │  • Can be slashed for misdeeds       • Stake covers bid obligations   │ │
+  │  │  • MIN_ACTIVATION_BALANCE = 32 ETH   • No minimum activation balance  │ │
+  │  │                                                                       │ │
+  │  └───────────────────────────────────────────────────────────────────────┘ │
   │                                                                             │
-  │  Same as regular validator deposit, but with 0x03 credentials:              │
+  │  STEP 1: Submit Builder Deposit                                             │
+  │  ══════════════════════════════                                             │
+  │                                                                             │
+  │  Builders deposit via the same deposit contract, but with a special         │
+  │  withdrawal credential format that routes them to the builder registry:     │
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │ deposit_data = DepositData(                                         │   │
   │  │     pubkey = your_bls_pubkey,                                       │   │
-  │  │     withdrawal_credentials = 0x03 + 0x00*11 + your_eth_address,     │   │
-  │  │     amount = MIN_DEPOSIT_AMOUNT (or more),  # At least 1 ETH        │   │
+  │  │     withdrawal_credentials = 0x03 + 0x00*11 + your_execution_addr,  │   │
+  │  │     amount = any_amount,  # No minimum! But need enough for bids    │   │
   │  │     signature = sign(deposit_data)                                  │   │
   │  │ )                                                                   │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
-  │  STEP 3: Wait for Activation                                                │
-  │  ═══════════════════════════                                                │
+  │  The 0x03 prefix tells the protocol: "This is a builder, not a validator"   │
   │                                                                             │
-  │  Same activation process as validators:                                     │
-  │  • Deposit processed → pending_deposits queue                               │
-  │  • Balance reaches MIN_ACTIVATION_BALANCE (32 ETH)                          │
-  │  • Enters activation queue                                                  │
-  │  • Becomes active after activation epoch                                    │
+  │  STEP 2: Builder Entry Created                                              │
+  │  ═════════════════════════════                                              │
   │                                                                             │
-  │  STEP 4: You're a Builder!                                                  │
-  │  ═════════════════════════                                                  │
+  │  When processed, a Builder entry is created in state.builders:              │
   │                                                                             │
-  │  Once active, you can:                                                      │
+  │  ┌─────────────────────────────────────────────────────────────────────┐   │
+  │  │ Builder(                                                            │   │
+  │  │     pubkey: BLSPubkey,              # Your signing key              │   │
+  │  │     version: uint8,                 # For future upgrades           │   │
+  │  │     execution_address: Address,     # Where you receive payments    │   │
+  │  │     balance: Gwei,                  # Your staked balance           │   │
+  │  │     deposit_epoch: Epoch,           # When you deposited            │   │
+  │  │     withdrawable_epoch: Epoch,      # When you can withdraw (exit)  │   │
+  │  │ )                                                                   │   │
+  │  └─────────────────────────────────────────────────────────────────────┘   │
+  │                                                                             │
+  │  STEP 3: You're Active Immediately!                                         │
+  │  ══════════════════════════════════                                         │
+  │                                                                             │
+  │  Unlike validators, builders don't need MIN_ACTIVATION_BALANCE.             │
+  │  Once deposited, you're an active builder and can:                          │
   │  • Submit bids to proposers                                                 │
-  │  • Have bids included in blocks                                             │
+  │  • Have bids included in blocks (if sufficient balance)                     │
   │  • Reveal payloads and earn MEV                                             │
-  │  • Pay proposers from your stake                                            │
+  │  • Pay proposers from your staked balance                                   │
   │                                                                             │
-  │  KEY DIFFERENCES FROM REGULAR VALIDATORS:                                   │
+  │  KEY DIFFERENCES:                                                           │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
-  │  │  Builders:                        Regular Validators:               │   │
-  │  │  • CAN submit execution bids      • CAN self-build if proposer      │   │
-  │  │  • CAN pay proposers              • Don't have payment mechanism    │   │
-  │  │  • Have 0x03 credentials          • Have 0x01 or 0x02               │   │
-  │  │  • Payments delayed if slashed   • Only standard penalties          │   │
-  │  │  • CAN propose blocks            • CAN propose blocks               │   │
+  │  │  Builders:                        Validators:                       │   │
+  │  │  • Separate registry              • Validator registry              │   │
+  │  │  • BuilderIndex type              • ValidatorIndex type             │   │
+  │  │  • No validation duties           • Must attest, propose, etc.      │   │
+  │  │  • No minimum balance             • Need 32 ETH to activate         │   │
+  │  │  • ~18 day exit delay             • ~27 hour exit delay             │   │
+  │  │  • CAN submit execution bids      • CAN self-build (special index)  │   │
+  │  │  • CAN pay proposers              • N/A                             │   │
   │  │                                                                     │   │
-  │  │  Note: You can be BOTH! A validator can also be a builder.          │   │
-  │  │  Self-building: proposer uses their own builder identity.           │   │
+  │  │  Self-Build: Proposers can build their own payloads using the       │   │
+  │  │  special BUILDER_INDEX_SELF_BUILD value (no builder needed).        │   │
+  │  │                                                                     │   │
+  │  └─────────────────────────────────────────────────────────────────────┘   │
+  │                                                                             │
+  │  EXITING AS A BUILDER:                                                      │
+  │  ┌─────────────────────────────────────────────────────────────────────┐   │
+  │  │                                                                     │   │
+  │  │  1. Initiate exit via voluntary exit message                        │   │
+  │  │  2. Wait MIN_BUILDER_WITHDRAWABILITY_DELAY (4096 epochs ≈ 18 days)  │   │
+  │  │  3. Balance withdrawn to execution_address                          │   │
+  │  │                                                                     │   │
+  │  │  Why 18 days? Ensures all pending payments are settled before exit. │   │
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
@@ -1427,12 +1452,38 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │                    BUILDER WORKFLOW: Bids and Payloads                      │
   ├─────────────────────────────────────────────────────────────────────────────┤
   │                                                                             │
+  │  PHASE 0: Get Proposer Preferences (NEW!)                                   │
+  │  ═══════════════════════════════════════                                    │
+  │                                                                             │
+  │  Before building, you MUST know the proposer's preferences!                 │
+  │                                                                             │
+  │  ┌─────────────────────────────────────────────────────────────────────┐   │
+  │  │                                                                     │   │
+  │  │  Listen to "proposer_preferences" gossip topic...                   │   │
+  │  │                                                                     │   │
+  │  │  Proposers broadcast SignedProposerPreferences at epoch start:      │   │
+  │  │                                                                     │   │
+  │  │  ProposerPreferences {                                              │   │
+  │  │      proposal_slot: Slot,           # Which slot they're proposing  │   │
+  │  │      validator_index: ValidatorIndex,                               │   │
+  │  │      fee_recipient: ExecutionAddress, # Where they want payment     │   │
+  │  │      gas_limit: uint64,               # Their preferred gas limit   │   │
+  │  │  }                                                                  │   │
+  │  │                                                                     │   │
+  │  │  IMPORTANT: Your bid MUST match these preferences exactly!          │   │
+  │  │  Bids with wrong fee_recipient or gas_limit are REJECTED.           │   │
+  │  │                                                                     │   │
+  │  │  If no preferences received → proposer won't accept trustless bids  │   │
+  │  │                                                                     │   │
+  │  └─────────────────────────────────────────────────────────────────────┘   │
+  │                                                                             │
   │  PHASE 1: Construct the Payload (before slot)                               │
   │  ════════════════════════════════════════════                               │
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
   │  │  1. Call execution engine: engine_getPayloadV5                      │   │
+  │  │     Use proposer's gas_limit from preferences!                      │   │
   │  │                                                                     │   │
   │  │  2. Receive:                                                        │   │
   │  │     • execution_payload (transactions, withdrawals, etc.)           │   │
@@ -1453,12 +1504,12 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │      parent_block_root = hash_tree_root(state.latest_block_header), │   │
   │  │      block_hash = payload.block_hash,          # COMMITMENT!        │   │
   │  │      prev_randao = payload.prev_randao,                             │   │
-  │  │      fee_recipient = proposer_address,         # Who gets paid      │   │
-  │  │      gas_limit = payload.gas_limit,                                 │   │
-  │  │      builder_index = my_validator_index,                            │   │
+  │  │      fee_recipient = preferences.fee_recipient, # From preferences! │   │
+  │  │      gas_limit = preferences.gas_limit,         # From preferences! │   │
+  │  │      builder_index = my_builder_index,          # BuilderIndex type │   │
   │  │      slot = target_slot,                       # Current or next    │   │
   │  │      value = payment_amount,                   # What I'll pay      │   │
-  │  │      execution_payment = nonzero_payment,       # For gossip checks │   │
+  │  │      execution_payment = 0,                    # Must be 0 now      │   │
   │  │      blob_kzg_commitments_root = hash_tree_root(blobs.commitments), │   │
   │  │  )                                                                  │   │
   │  │                                                                     │   │
@@ -1481,8 +1532,8 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │  When block arrives:                                                │   │
   │  │    included_bid = block.body.signed_execution_payload_bid.message   │   │
   │  │                                                                     │   │
-  │  │    if included_bid.builder_index == my_validator_index:             │   │
-  │  │        # MY BID WAS SELECTED! 🎉                                    │   │
+  │  │    if included_bid.builder_index == my_builder_index:               │   │
+  │  │        # MY BID WAS SELECTED!                                       │   │
   │  │        # Reveal payload; payment only if same-slot quorum reached   │   │
   │  │        proceed to Phase 4                                           │   │
   │  │    else:                                                            │   │
@@ -1499,7 +1550,7 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
   │  │  envelope = ExecutionPayloadEnvelope(                               │   │
   │  │      payload = stored_payload,           # From Phase 1             │   │
   │  │      execution_requests = stored_requests,                          │   │
-  │  │      builder_index = my_validator_index,                            │   │
+  │  │      builder_index = my_builder_index,   # BuilderIndex type        │   │
   │  │      beacon_block_root = hash_tree_root(received_block),            │   │
   │  │      slot = received_block.slot,                                    │   │
   │  │      blob_kzg_commitments = stored_commitments,                     │   │
@@ -1945,7 +1996,19 @@ GLOAS: Enshrined Proposer-Builder Separation (ePBS)
 
 Quick lookup for constants, containers, and functions defined in the GLOAS specs. Each entry includes a brief description of its purpose.
 
+### 9.0 Custom Types
+
+| Type | SSZ Equivalent | Description |
+|------|----------------|-------------|
+| `BuilderIndex` | `uint64` | Index into the builder registry (`state.builders`). Separate from `ValidatorIndex` - builders are NOT validators. |
+
 ### 9.1 Constants
+
+#### beacon-chain.md - Index Flags
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `BUILDER_INDEX_FLAG` | `uint64(2**40)` | Bitwise flag to distinguish `BuilderIndex` from `ValidatorIndex` in contexts where both might appear. |
 
 #### beacon-chain.md - Domain Types
 
@@ -1953,11 +2016,13 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 |----------|-------|-------------|
 | `DOMAIN_BEACON_BUILDER` | `DomainType('0x0B000000')` | Domain for signing builder-related messages (bids and payload envelopes). Separates builder signatures from other validator duties. |
 | `DOMAIN_PTC_ATTESTER` | `DomainType('0x0C000000')` | Domain for signing payload attestation messages. Used by PTC members when voting on payload timeliness. |
+| `DOMAIN_PROPOSER_PREFERENCES` | `DomainType('0x0D000000')` | Domain for signing proposer preferences messages. Proposers use this to communicate fee_recipient and gas_limit to builders. |
 
 #### beacon-chain.md - Misc
 
 | Constant | Value | Description |
 |----------|-------|-------------|
+| `BUILDER_INDEX_SELF_BUILD` | `BuilderIndex(UINT64_MAX)` | Special builder index indicating the proposer built the payload themselves (self-build). No external builder involved. |
 | `BUILDER_PAYMENT_THRESHOLD_NUMERATOR` | `uint64(6)` | Numerator for the 60% quorum threshold. Builder payments only execute if same-slot attestations representing 60% of expected weight are received. |
 | `BUILDER_PAYMENT_THRESHOLD_DENOMINATOR` | `uint64(10)` | Denominator for the 60% quorum threshold. Combined with numerator: 6/10 = 60% of per-slot balance required for payment. |
 
@@ -1965,7 +2030,7 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `BUILDER_WITHDRAWAL_PREFIX` | `Bytes1('0x03')` | Withdrawal credential prefix identifying a validator as a builder. Builders use 0x03 prefix (vs 0x01 for BLS, 0x02 for compounding). Enables non-self-build bids. |
+| `BUILDER_WITHDRAWAL_PREFIX` | `Bytes1('0x03')` | Deposit credential prefix that routes deposits to the builder registry instead of validator registry. The 0x03 prefix creates a `Builder` entry, not a `Validator` entry. |
 
 #### beacon-chain.md - Preset
 
@@ -1973,7 +2038,15 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 |----------|-------|-------------|
 | `PTC_SIZE` | `uint64(512)` | Number of validators in the Payload Timeliness Committee per slot. Selected via balance-weighted sampling from that slot's attestation committees. |
 | `MAX_PAYLOAD_ATTESTATIONS` | `4` | Maximum number of aggregated payload attestations that can be included in a beacon block. Limits block size while allowing sufficient coverage. |
-| `BUILDER_PENDING_WITHDRAWALS_LIMIT` | `uint64(1,048,576)` | Maximum pending builder withdrawals in the state. Large limit (~1M) accommodates high throughput without state bloat concerns. |
+| `BUILDER_REGISTRY_LIMIT` | `uint64(2**40)` (≈ 1 trillion) | Maximum number of builders in `state.builders`. Separate from validator registry limit. |
+| `BUILDER_PENDING_WITHDRAWALS_LIMIT` | `uint64(2**20)` (≈ 1M) | Maximum pending builder withdrawals in the state. Large limit accommodates high throughput without state bloat concerns. |
+| `MAX_BUILDERS_PER_WITHDRAWALS_SWEEP` | `uint64(2**14)` (= 16,384) | Maximum builders processed per withdrawal sweep. Limits computation per slot. |
+
+#### beacon-chain.md - Configuration
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `MIN_BUILDER_WITHDRAWABILITY_DELAY` | `uint64(4096)` epochs (≈ 18 days) | Minimum delay before a builder can withdraw after initiating exit. Long delay ensures all pending payments settle before exit. |
 
 #### fork-choice.md - Constants
 
@@ -2013,23 +2086,31 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 
 | Container | Fields | Description |
 |-----------|--------|-------------|
+| `Builder` | `pubkey`, `version`, `execution_address`, `balance`, `deposit_epoch`, `withdrawable_epoch` | Represents a builder in the separate builder registry. Builders are staked actors who build payloads but do NOT perform validation duties. `balance` is their staked Gwei for covering bid payments. |
 | `BuilderPendingPayment` | `weight`, `withdrawal` | Tracks a payment waiting for quorum confirmation. `weight` accumulates as same-slot attestations arrive; `withdrawal` holds the payment details to execute once quorum is reached. |
-| `BuilderPendingWithdrawal` | `fee_recipient`, `amount`, `builder_index`, `withdrawable_epoch` | A confirmed payment queued for withdrawal. Created when quorum is reached; processed during withdrawal sweep after `withdrawable_epoch`. |
+| `BuilderPendingWithdrawal` | `fee_recipient`, `amount`, `builder_index` | A confirmed payment queued for withdrawal. Created when quorum is reached; processed during builder withdrawal sweep. Uses `BuilderIndex` (not `ValidatorIndex`). |
 | `PayloadAttestationData` | `beacon_block_root`, `slot`, `payload_present`, `blob_data_available` | Data signed by PTC members. Indicates whether the voter saw the payload (`payload_present`) and blob data (`blob_data_available`) for a specific beacon block. |
 | `PayloadAttestation` | `aggregation_bits`, `data`, `signature` | Aggregated payload attestation included in blocks. `aggregation_bits` indicates which PTC members are included in this aggregate signature. |
 | `PayloadAttestationMessage` | `validator_index`, `data`, `signature` | Individual (non-aggregated) payload attestation from a single PTC member. Gossiped on p2p network, then aggregated for block inclusion. |
 | `IndexedPayloadAttestation` | `attesting_indices`, `data`, `signature` | Payload attestation with explicit validator indices (vs bitfield). Used internally for signature verification and slashing evidence. |
-| `ExecutionPayloadBid` | `parent_block_hash`, `parent_block_root`, `block_hash`, `prev_randao`, `fee_recipient`, `gas_limit`, `builder_index`, `slot`, `value`, `execution_payment`, `blob_kzg_commitments_root` | Builder's commitment to build a specific payload. Contains enough information to verify the payload matches when revealed. `value` is the payment to proposer; `execution_payment` is the unconditional fee. |
-| `SignedExecutionPayloadBid` | `message`, `signature` | Signed wrapper around `ExecutionPayloadBid`. Builder signs with their withdrawal credential key (0x03 prefix). |
-| `ExecutionPayloadEnvelope` | `payload`, `execution_requests`, `builder_index`, `beacon_block_root`, `slot`, `blob_kzg_commitments`, `state_root` | Container for the revealed execution payload. Links to the beacon block via `beacon_block_root`; includes `state_root` for stateless validation. |
+| `ExecutionPayloadBid` | `parent_block_hash`, `parent_block_root`, `block_hash`, `prev_randao`, `fee_recipient`, `gas_limit`, `builder_index`, `slot`, `value`, `execution_payment`, `blob_kzg_commitments_root` | Builder's commitment to build a specific payload. `builder_index` is `BuilderIndex` type. `fee_recipient` and `gas_limit` must match proposer's `SignedProposerPreferences`. |
+| `SignedExecutionPayloadBid` | `message`, `signature` | Signed wrapper around `ExecutionPayloadBid`. Builder signs with their BLS key from `state.builders[builder_index].pubkey`. |
+| `ExecutionPayloadEnvelope` | `payload`, `execution_requests`, `builder_index`, `beacon_block_root`, `slot`, `blob_kzg_commitments`, `state_root` | Container for the revealed execution payload. Links to the beacon block via `beacon_block_root`; includes `state_root` for stateless validation. `builder_index` is `BuilderIndex` type. |
 | `SignedExecutionPayloadEnvelope` | `message`, `signature` | Signed wrapper around `ExecutionPayloadEnvelope`. Builder signs to prove they authored the payload matching their bid. |
+
+#### p2p-interface.md - New Containers
+
+| Container | Fields | Description |
+|-----------|--------|-------------|
+| `ProposerPreferences` | `proposal_slot`, `validator_index`, `fee_recipient`, `gas_limit` | Proposer's preferences for their upcoming slot. Builders MUST use these exact `fee_recipient` and `gas_limit` values in their bids. |
+| `SignedProposerPreferences` | `message`, `signature` | Signed wrapper for proposer preferences. Broadcast on `proposer_preferences` topic at epoch start for next epoch's slots. |
 
 #### beacon-chain.md - Modified Containers
 
 | Container | Changes | Description |
 |-----------|---------|-------------|
 | `BeaconBlockBody` | Added: `signed_execution_payload_bid`, `payload_attestations`. Removed: `execution_payload`, `blob_kzg_commitments`, `execution_requests` | Core structural change of ePBS. Proposers now include a builder's bid commitment instead of the actual payload. Payload attestations from previous slot's PTC are also included. |
-| `BeaconState` | Added: `latest_execution_payload_bid`, `execution_payload_availability`, `builder_pending_payments`, `builder_pending_withdrawals`, `latest_block_hash`, `payload_expected_withdrawals`. Removed: `latest_execution_payload_header` | New state fields track builder economics (pending payments, withdrawals), payload delivery history (availability bitvector), and expected withdrawals for validation. |
+| `BeaconState` | Added: `builders`, `next_withdrawal_builder_index`, `latest_execution_payload_bid`, `execution_payload_availability`, `builder_pending_payments`, `builder_pending_withdrawals`, `latest_block_hash`, `payload_expected_withdrawals`. Removed: `latest_execution_payload_header` | New fields include separate builder registry (`builders: List[Builder]`), builder withdrawal sweep index, and fields for builder economics and payload tracking. |
 
 #### fork-choice.md - New/Modified
 
@@ -2051,22 +2132,21 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 
 | Function | Description |
 |----------|-------------|
-| `is_builder_withdrawal_credential(withdrawal_credentials)` | Returns True if the withdrawal credentials start with `BUILDER_WITHDRAWAL_PREFIX` (0x03). Used to identify builder validators who can submit non-self-build bids. |
-| `has_builder_withdrawal_credential(validator)` | Returns True if the validator has builder withdrawal credentials. Convenience wrapper checking if validator can act as a builder. |
+| `is_builder_index(index)` | Returns True if the index has `BUILDER_INDEX_FLAG` set, indicating it's a `BuilderIndex` not a `ValidatorIndex`. Used to distinguish between the two registry types. |
+| `is_active_builder(state, builder_index)` | Returns True if the builder at the given index is active (deposited and not exited). Checks `state.builders[builder_index]` status. |
+| `is_builder_withdrawal_credential(withdrawal_credentials)` | Returns True if the withdrawal credentials start with `BUILDER_WITHDRAWAL_PREFIX` (0x03). Used to route deposits to builder registry. |
 | `is_attestation_same_slot(state, data)` | Returns True if the attestation is for the same slot as the current state. Used for builder payment quorum calculation (only same-slot attestations count). |
 | `is_valid_indexed_payload_attestation(state, indexed_payload_attestation)` | Validates a payload attestation: checks indices are sorted, within PTC bounds, signature is valid, and all attesters are in the PTC for that slot. |
 | `is_parent_block_full(state)` | Returns True if the parent block's payload was delivered (not empty). Checks `execution_payload_availability` bitvector for the parent slot. |
-
-#### beacon-chain.md - Predicates (Modified)
-
-| Function | Description |
-|----------|-------------|
-| `has_compounding_withdrawal_credential(validator)` | Modified to also return True for builder credentials (0x03), since builders can compound. Builders are treated as having compounding capability. |
 
 #### beacon-chain.md - Misc (New)
 
 | Function | Description |
 |----------|-------------|
+| `convert_builder_index_to_validator_index(builder_index)` | Converts a `BuilderIndex` to the format used in mixed contexts by setting `BUILDER_INDEX_FLAG`. Enables builders to be referenced alongside validators. |
+| `convert_validator_index_to_builder_index(validator_index)` | Extracts the `BuilderIndex` from a flagged index by clearing `BUILDER_INDEX_FLAG`. Inverse of `convert_builder_index_to_validator_index`. |
+| `get_pending_balance_to_withdraw_for_builder(state, builder_index)` | Returns total pending withdrawals for a specific builder. Sums amounts in `builder_pending_withdrawals` matching the builder index. |
+| `can_builder_cover_bid(state, builder_index, bid_value)` | Returns True if the builder has sufficient balance to cover a bid. Checks `builder.balance >= bid_value + pending_withdrawals`. |
 | `compute_balance_weighted_selection(state, indices, seed, size, shuffle)` | Selects `size` validators from `indices` weighted by effective balance. Core algorithm for PTC selection - validators with more stake are more likely to be selected. |
 | `compute_balance_weighted_acceptance(state, index, seed, i)` | Probabilistic acceptance function for balance-weighted sampling. Returns True if validator at `index` should be accepted based on their balance relative to MAX_EFFECTIVE_BALANCE. |
 
@@ -2074,7 +2154,6 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 
 | Function | Description |
 |----------|-------------|
-| `get_pending_balance_to_withdraw(state, validator_index)` | Modified to also sum pending builder withdrawals. Returns total pending withdrawals including both regular and builder payment withdrawals. |
 | `compute_proposer_indices(state, epoch, seed, indices)` | Refactored to use `compute_balance_weighted_selection`. Now shares selection logic with PTC computation for consistency. |
 
 #### beacon-chain.md - State Accessors (New)
@@ -2092,21 +2171,31 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 | `get_next_sync_committee_indices(state)` | Modified to use refactored `compute_proposer_indices`. Internal change for code reuse, no functional difference. |
 | `get_attestation_participation_flag_indices(state, data, inclusion_delay)` | Modified to handle same-slot attestations differently. Same-slot attestations update builder payment weight instead of normal participation flags. |
 
+#### beacon-chain.md - Beacon State Mutators (New)
+
+| Function | Description |
+|----------|-------------|
+| `initiate_builder_exit(state, builder_index)` | Initiates a builder's exit. Sets `builder.withdrawable_epoch` to current epoch + `MIN_BUILDER_WITHDRAWABILITY_DELAY` (~18 days). |
+
 #### beacon-chain.md - State Transition (New)
 
 | Function | Description |
 |----------|-------------|
 | `process_builder_pending_payments(state)` | Called during epoch processing. Clears expired pending payments (older than 2 epochs) and moves confirmed payments to withdrawal queue. |
-| `is_builder_payment_withdrawable(state, withdrawal)` | Checks if a builder withdrawal is ready to process. Returns True if the builder exists and the current epoch >= `withdrawable_epoch`. |
-| `get_builder_withdrawable_balance(builder, balance)` | Returns the amount a builder can withdraw given their current balance. Ensures withdrawal doesn't exceed available balance. |
-| `get_builder_withdrawals(state, withdrawal_index, prior_withdrawals)` | Generates builder withdrawals for the current slot. Called during withdrawal processing to include pending builder payments. |
+| `get_builder_withdrawals(state, withdrawal_index, prior_withdrawals)` | Generates builder payment withdrawals for the current slot. Called during withdrawal processing. |
+| `get_builders_sweep_withdrawals(state, withdrawal_index)` | Sweeps builder balances for regular withdrawals (not payments). Processes up to `MAX_BUILDERS_PER_WITHDRAWALS_SWEEP` builders per slot. |
 | `update_payload_expected_withdrawals(state, withdrawals)` | Updates `payload_expected_withdrawals` state field. Called during slot processing to pre-compute withdrawals the payload must include. |
 | `update_builder_pending_withdrawals(state, count)` | Removes processed builder withdrawals from state. Called after withdrawals are included to clean up the queue. |
-| `verify_execution_payload_bid_signature(state, signed_bid)` | Verifies the builder's signature on their bid. Uses `DOMAIN_BEACON_BUILDER` and the builder's withdrawal credential public key. |
-| `process_execution_payload_bid(state, block)` | Processes the bid in a beacon block. Validates bid consistency (slot, parent, builder credentials), verifies signature, and updates `latest_execution_payload_bid`. |
+| `update_next_withdrawal_builder_index(state, count)` | Updates `next_withdrawal_builder_index` after processing builder withdrawals. Advances the sweep position. |
+| `verify_execution_payload_bid_signature(state, signed_bid)` | Verifies the builder's signature on their bid. Uses `DOMAIN_BEACON_BUILDER` and `state.builders[builder_index].pubkey`. |
+| `process_execution_payload_bid(state, block)` | Processes the bid in a beacon block. Validates bid consistency (slot, parent, builder active), verifies signature, and updates `latest_execution_payload_bid`. |
 | `process_payload_attestation(state, payload_attestation)` | Processes a payload attestation from a previous slot's PTC. Updates builder payment weight if payload was marked present and quorum is reached. |
 | `verify_execution_payload_envelope_signature(state, signed_envelope)` | Verifies the builder's signature on the payload envelope. Ensures the revealed payload was authored by the committed builder. |
 | `process_execution_payload(state, signed_envelope, execution_engine)` | Processes the revealed execution payload. Validates it matches the bid commitment, executes via execution engine, and updates state. |
+| `get_index_for_new_builder(state)` | Returns the next available index in `state.builders` for a new builder deposit. |
+| `get_builder_from_deposit(deposit)` | Creates a `Builder` object from deposit data. Extracts pubkey, execution_address from withdrawal_credentials, initializes balance. |
+| `add_builder_to_registry(state, builder)` | Adds a new builder to `state.builders`. Called when processing deposits with 0x03 credentials. |
+| `apply_deposit_for_builder(state, pubkey, withdrawal_credentials, amount)` | Processes a deposit for a builder. Either creates new builder or tops up existing builder's balance. |
 
 #### beacon-chain.md - State Transition (Modified)
 
@@ -2129,6 +2218,7 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 | `get_parent_payload_status(store, block)` | Returns the payload status (EMPTY/FULL) of a block's parent. Used to determine valid child states in fork choice tree. |
 | `is_parent_node_full(store, block)` | Returns True if the block's parent has FULL payload status. Convenience function for checking parent payload availability. |
 | `is_supporting_vote(store, node, message)` | Returns True if an attestation message supports a fork choice node. Considers both block root ancestry AND payload status compatibility. |
+| `get_attestation_score(store, node)` | Calculates the attestation score for a node (weight from attestations only, no proposer boost). Extracted for reuse in `get_weight` and `is_head_weak`. |
 | `should_extend_payload(store, root)` | Decides whether to extend with FULL or EMPTY payload status. Returns True (FULL) if payload was timely, parent was FULL, and payload state exists. |
 | `get_payload_status_tiebreaker(store, node)` | Returns tiebreaker value (0, 1, or 2) for equal-weight nodes. FULL nodes beat PENDING which beat EMPTY, incentivizing payload delivery. |
 | `get_node_children(store, blocks, node)` | Returns valid child nodes for a parent node. Generates appropriate (root, status) pairs based on parent's payload status. |
@@ -2142,7 +2232,7 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 | `get_forkchoice_store(anchor_state, anchor_block)` | Modified to initialize new store fields. Sets up `execution_payload_states` and `ptc_vote` mappings. |
 | `get_ancestor(store, root, slot)` | Modified to work with ForkChoiceNodes. Traverses (root, status) pairs when finding ancestors. |
 | `get_checkpoint_block(store, root, epoch)` | Modified to return ForkChoiceNode. Returns the block at epoch boundary with appropriate payload status. |
-| `get_weight(store, node)` | Modified to weight EMPTY vs FULL nodes differently. Attestations supporting specific payload status only count for matching nodes. |
+| `get_weight(store, node)` | Modified to use `get_attestation_score`. Weights EMPTY vs FULL nodes differently; attestations supporting specific payload status only count for matching nodes. |
 | `get_head(store)` | Modified to return ForkChoiceNode (root + status). Finds highest-weight leaf considering both block and payload status. |
 | `get_attestation_due_ms(epoch)` | Modified for GLOAS timing (3000ms = 25% vs previous 33%). Earlier deadline gives builders more time. |
 | `get_aggregate_due_ms(epoch)` | Modified for GLOAS timing (6000ms = 50%). Aligned with new slot timeline. |
@@ -2169,6 +2259,8 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 |----------|-------------|
 | `get_ptc_assignment(state, epoch, validator_index)` | Returns the slot a validator is assigned to the PTC, or None if not assigned. Validators check this to know when to send payload attestations. |
 | `get_payload_attestation_message_signature(state, attestation, privkey)` | Signs a payload attestation message with `DOMAIN_PTC_ATTESTER`. Returns the BLS signature for the PTC vote. |
+| `get_upcoming_proposal_slots(state, validator_index)` | Returns slots in the next epoch where validator is proposing. Used to broadcast `SignedProposerPreferences` for upcoming slots. |
+| `get_proposer_preferences_signature(state, preferences, privkey)` | Signs proposer preferences with `DOMAIN_PROPOSER_PREFERENCES`. Proposers sign their fee_recipient and gas_limit preferences. |
 
 #### validator.md - Functions (Modified)
 
@@ -2205,9 +2297,10 @@ Quick lookup for constants, containers, and functions defined in the GLOAS specs
 
 | Topic | Message Type | Description |
 |-------|--------------|-------------|
-| `execution_payload_bid` | `SignedExecutionPayloadBid` | Builders broadcast their bids on this topic. Proposers subscribe to receive bids and select the highest-value valid bid for inclusion in their block. |
+| `execution_payload_bid` | `SignedExecutionPayloadBid` | Builders broadcast their bids on this topic. Proposers subscribe to receive bids and select the highest-value valid bid for inclusion in their block. Bids must wait for `SignedProposerPreferences` first. |
 | `execution_payload` | `SignedExecutionPayloadEnvelope` | Builders broadcast revealed payloads on this topic after seeing their bid included. Validators receive payloads to update fork choice and execute state transitions. |
 | `payload_attestation_message` | `PayloadAttestationMessage` | PTC members broadcast their individual votes on payload timeliness. Aggregators collect these for block inclusion; fork choice uses them to determine payload status. |
+| `proposer_preferences` | `SignedProposerPreferences` | Proposers broadcast their fee_recipient and gas_limit preferences at epoch start for next epoch's slots. Builders must match these values in their bids. |
 
 #### Modified Topics
 

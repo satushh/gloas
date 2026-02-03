@@ -62,7 +62,7 @@ A Complete Visual Guide
   │                                                                             │
   │   ┌──────────────┐                                   ┌──────────────┐       │
   │   │   BUILDER    │ ─────── BID ────────────────────► │  PROPOSER    │       │
-  │   │ (Validator   │    SignedExecutionPayloadBid      │ (Validator)  │       │
+  │   │ (Staked actor│    SignedExecutionPayloadBid      │ (Validator)  │       │
   │   │  with 0x03)  │                                   └──────┬───────┘       │
   │   └──────┬───────┘                                          │               │
   │          │                                                  │               │
@@ -74,14 +74,14 @@ A Complete Visual Guide
   │   │                     ETHEREUM PROTOCOL                            │      │
   │   │                                                                  │      │
   │   │  • Bids are commitments enforced by protocol                     │      │
-  │   │  • Builder pays only if same-slot attestations reach quorum      │      │
+  │   │  • Builder pays when payload delivered OR quorum reached          │      │
   │   │  • PTC (Payload Timeliness Committee) verifies payload delivery  │      │
   │   │  • No trusted third party needed!                                │      │
   │   └──────────────────────────────────────────────────────────────────┘      │
   │                                    │                                        │
   │   SPEC ENTITIES:                   ▼                                        │
   │   • BUILDER_WITHDRAWAL_PREFIX = 0x03           ┌─────────────────┐          │
-  │   • has_builder_withdrawal_credential()        │   TRUSTLESS!    │          │
+  │   • is_builder_withdrawal_credential()        │   TRUSTLESS!    │          │
   │   • PTC_SIZE = 512 validators                  │  DECENTRALIZED  │          │
   │   • get_ptc(state, slot)                       │  CENSORSHIP     │          │
   │                                                │  RESISTANT      │          │
@@ -170,8 +170,8 @@ A Complete Visual Guide
       │  │  │                     │  │  │     │  │  │  • transactions     │  │  │
       │  │  │ ╔═════════════════╗ │  │  │     │  │  │  • withdrawals      │  │  │
       │  │  │ ║ SignedExecution ║ │  │  │ ──► │  │  └─────────────────────┘  │  │
-      │  │  │ ║ PayloadBid      ║ │  │  │ref  │  │  blob_kzg_commitments     │  │
-      │  │  │ ║ (commitment)    ║ │  │  │     │  │  execution_requests       │  │
+      │  │  │ ║ PayloadBid      ║ │  │  │ref  │  │  execution_requests       │  │
+      │  │  │ ║ (commitment)    ║ │  │  │     │  │                            │  │
       │  │  │ ╚═════════════════╝ │  │  │     │  │  beacon_block_root ◄──────┼──┤
       │  │  │ payload_attestations│  │  │     │  │  state_root               │  │
       │  │  └─────────────────────┘  │  │     │  └───────────────────────────┘  │
@@ -196,6 +196,12 @@ A Complete Visual Guide
   │                                                                             │
   │  ADDED:                                                                     │
   │  ──────                                                                     │
+  │  ✅ builders: List[Builder, BUILDER_REGISTRY_LIMIT]                         │
+  │     └─► Separate registry for builders (not validators!)                    │
+  │                                                                             │
+  │  ✅ next_withdrawal_builder_index: BuilderIndex                             │
+  │     └─► Tracks sweep position for builder withdrawals                      │
+  │                                                                             │
   │  ✅ latest_execution_payload_bid: ExecutionPayloadBid                       │
   │     └─► Stores the committed bid (block_hash, value, builder_index, etc)    │
   │                                                                             │
@@ -392,11 +398,11 @@ A Complete Visual Guide
   │                                            │ }                       │      │
   │                                            └─────────────────────────┘      │
   │                                                                             │
-  │  SLOT N: Attestations Accumulate Weight                                     │
-  │  ═══════════════════════════════════════                                    │
+  │  SLOT N: Attestations Accumulate Weight (for quorum backup)                 │
+  │  ════════════════════════════════════════════════════════                  │
   │                                                                             │
   │  Same-slot attesters voting for the block add their effective_balance       │
-  │  to the payment's "weight" field:                                           │
+  │  to the payment's "weight" field (used if payload NOT delivered):           │
   │                                                                             │
   │  ┌─────────────────┐                                                        │
   │  │ Attester A      │                                                        │
@@ -411,10 +417,18 @@ A Complete Visual Guide
   │  │ eff_bal: 64 ETH │                                                        │
   │  └─────────────────┘                                                        │
   │                                                                             │
-  │  EPOCH BOUNDARY: Quorum Check                                               │
-  │  ════════════════════════════                                               │
+  │  PAYLOAD PROCESSED: Immediate Queue                                         │
+  │  ════════════════════════════════                                           │
   │                                                                             │
-  │  At epoch processing (process_builder_pending_payments):                    │
+  │  When process_execution_payload runs (builder revealed payload):            │
+  │  → Payment is IMMEDIATELY moved to builder_pending_withdrawals              │
+  │  → No quorum check needed - payload delivery proves the block was seen      │
+  │                                                                             │
+  │  EPOCH BOUNDARY: Quorum Check (backup for withheld payloads)                │
+  │  ═════════════════════════════════════════════════════════                  │
+  │                                                                             │
+  │  At epoch processing (process_builder_pending_payments), for payments       │
+  │  where the payload was NOT delivered:                                       │
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐    │
   │  │                                                                     │    │
@@ -422,7 +436,7 @@ A Complete Visual Guide
   │  │                                                                     │    │
   │  │  if payment.weight >= quorum:                                       │    │
   │  │      → Move to builder_pending_withdrawals (CONFIRMED!)             │    │
-  │  │      → Set withdrawable_epoch based on exit queue                   │    │
+  │  │      → Builder pays even though they withheld payload!              │    │
   │  │  else:                                                              │    │
   │  │      → Payment DISCARDED (builder keeps their stake!)               │    │
   │  │                                                                     │    │
@@ -436,10 +450,10 @@ A Complete Visual Guide
   │  This ensures payments only go through when there's strong consensus        │
   │  that the block was actually received and valid.                            │
   │                                                                             │
-  │  AFTER withdrawable_epoch: Actual ETH Transfer                              │
-  │  ═════════════════════════════════════════════                              │
+  │  WITHDRAWAL SWEEP: Actual ETH Transfer                                      │
+  │  ═══════════════════════════════════                                       │
   │                                                                             │
-  │  When processing withdrawals, builder_pending_withdrawals are converted     │
+  │  During withdrawal processing, builder_pending_withdrawals are converted   │
   │  to actual Withdrawal objects that send ETH to the proposer's fee_recipient │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
@@ -472,7 +486,7 @@ A Complete Visual Guide
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
   │  │    │ gas_limit           │ uint64 - Block gas limit             │  │   │
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
-  │  │    │ builder_index       │ ValidatorIndex - Who made bid        │  │   │
+  │  │    │ builder_index       │ BuilderIndex - Who made bid          │  │   │
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
   │  │    │ slot                │ Slot - Which slot this is for        │  │   │
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
@@ -481,8 +495,8 @@ A Complete Visual Guide
   │  │    │ execution_payment   │ Gwei - For trusted out-of-protocol   │  │   │
   │  │    │                     │ auctions (must be 0 for gossip)      │  │   │
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
-  │  │    │ blob_kzg_commitments│ Root - Hash of blob commitments      │  │   │
-  │  │    │ _root               │                                      │  │   │
+  │  │    │ blob_kzg_commitments│ List[KZGCommitment] - Blob KZG       │  │   │
+  │  │    │                     │ commitments (moved here from envelope)│  │   │
   │  │    └─────────────────────┴──────────────────────────────────────┘  │   │
   │  │  }                                                                  │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -492,9 +506,9 @@ A Complete Visual Guide
   │  1. A specific block_hash (builder can't change payload after bid)          │
   │  2. A specific value (payment amount is locked in)                          │
   │  3. A specific parent (prevents bid reuse on different forks)               │
-  │  4. Blob commitments root (ensures DA is also committed)                    │
+  │  4. Blob KZG commitments (ensures DA is also committed)                     │
   │                                                                             │
-  │  Builder payment is only finalized if same-slot attestations reach quorum   │
+  │  Builder payment queued when payload delivered, or via quorum if withheld   │
   │                                                                             │
   │  SPEC: beacon-chain.md → ExecutionPayloadBid container                      │
   │        SignedExecutionPayloadBid wraps with BLS signature                   │
@@ -537,14 +551,11 @@ A Complete Visual Guide
   │  │    execution_requests: ExecutionRequests                            │   │
   │  │      • deposits, withdrawals, consolidations (from EL)              │   │
   │  │                                                                     │   │
-  │  │    builder_index: ValidatorIndex   ◄── Must match bid!              │   │
+  │  │    builder_index: BuilderIndex     ◄── Must match bid!              │   │
   │  │                                                                     │   │
   │  │    beacon_block_root: Root         ◄── Links to the beacon block    │   │
   │  │                                                                     │   │
   │  │    slot: Slot                      ◄── Must match block slot        │   │
-  │  │                                                                     │   │
-  │  │    blob_kzg_commitments: List[KZGCommitment]                        │   │
-  │  │      ◄── hash_tree_root must match bid.blob_kzg_commitments_root    │   │
   │  │                                                                     │   │
   │  │    state_root: Root                ◄── Post-state after processing  │   │
   │  │                                                                     │   │
@@ -559,7 +570,7 @@ A Complete Visual Guide
   │  │ Contains │──────────────►│ block_hash   │◄─────────│ payload.     │      │
   │  │ bid      │               │              │  MUST    │ block_hash   │      │
   │  └──────────┘               │ builder_idx  │◄─MATCH──►│ builder_idx  │      │
-  │                             │ blob_root    │◄─────────│ hash(comms)  │      │
+  │                             │ blob_comms   │ (commitments now in bid) │      │
   │                             └──────────────┘          └──────────────┘      │
   │                                                                             │
   │  SPEC: beacon-chain.md → ExecutionPayloadEnvelope container                 │
@@ -685,24 +696,21 @@ A Complete Visual Guide
   │  │                         │              │   └─► How much to pay   │      │
   │  │ withdrawal:             │              │                         │      │
   │  │   BuilderPending-       │──────────────│ builder_index:          │      │
-  │  │   Withdrawal            │   contains   │   ValidatorIndex        │      │
+  │  │   Withdrawal            │   contains   │   BuilderIndex          │      │
   │  │                         │              │   └─► Who pays          │      │
   │  │                         │              │                         │      │
-  │  │                         │              │ withdrawable_epoch:     │      │
-  │  │                         │              │   Epoch                 │      │
-  │  │                         │              │   └─► When withdrawable │      │
   │  └─────────────────────────┘              └─────────────────────────┘      │
   │                                                                             │
   │  LIFECYCLE:                                                                 │
   │  ══════════                                                                 │
   │                                                                             │
   │  ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐   │
-  │  │ Bid included in  │     │ Quorum reached   │     │ Withdrawable     │   │
-  │  │ block            │ ──► │ at epoch boundary│ ──► │ epoch reached    │   │
-  │  │                  │     │                  │     │                  │   │
-  │  │ builder_pending_ │     │ Moved to         │     │ Converted to     │   │
-  │  │ payments[slot]   │     │ builder_pending_ │     │ actual Withdrawal│   │
-  │  │ created          │     │ withdrawals      │     │ in execution     │   │
+  │  │ Bid included in  │     │ Payload revealed │     │ Withdrawal       │   │
+  │  │ block            │ ──► │ (process_exec_   │ ──► │ sweep processes  │   │
+  │  │                  │     │  payload) OR     │     │                  │   │
+  │  │ builder_pending_ │     │ Quorum reached   │     │ Converted to     │   │
+  │  │ payments[slot]   │     │ at epoch boundary│     │ actual Withdrawal│   │
+  │  │ created          │     │ (if no payload)  │     │ in execution     │   │
   │  └──────────────────┘     └──────────────────┘     └──────────────────┘   │
   │                                                                             │
   │  2-EPOCH WINDOW (from beacon-chain.md):                                     │
@@ -730,7 +738,7 @@ A Complete Visual Guide
   │  FUNCTIONS: process_builder_pending_payments()                              │
   │             get_builder_payment_quorum_threshold()                          │
   │             get_builder_withdrawals()                                       │
-  │             is_builder_payment_withdrawable()                               │
+  │             get_builders_sweep_withdrawals()                                │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -1097,11 +1105,13 @@ A Complete Visual Guide
   │      return sum(store.ptc_vote[root]) > PAYLOAD_TIMELY_THRESHOLD  # >256    │
   │                                                                             │
   │  SPEC: fork-choice.md                                                       │
-  │  HANDLERS: on_block() (modified), on_execution_payload() (new)              │
+  │  HANDLERS: on_block() (modified), is_data_available() (modified),           │
+  │            on_execution_payload() (new)                                     │
   │            on_payload_attestation_message() (new)                           │
   │  FUNCTIONS: is_payload_timely(), notify_ptc_messages()                      │
   │             get_parent_payload_status(), is_parent_node_full()              │
   │             should_extend_payload(), get_payload_status_tiebreaker()        │
+  │             get_attestation_score() (modified)                              │
   │  STORE FIELDS: execution_payload_states, ptc_vote (new)                     │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
@@ -1190,18 +1200,20 @@ A Complete Visual Guide
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │ REJECT if:                                                          │   │
-  │  │   • builder_index is not valid, active, and non-slashed            │   │
-  │  │   • builder doesn't have 0x03 (BUILDER_WITHDRAWAL_PREFIX)          │   │
+  │  │   • builder_index is not valid/active (is_active_builder fails)     │   │
   │  │   • execution_payment is non-zero (reserved for trusted auctions)  │   │
+  │  │   • fee_recipient doesn't match proposer's preferences              │   │
+  │  │   • gas_limit doesn't match proposer's preferences                  │   │
   │  │   • signature is invalid                                           │   │
   │  │                                                                     │   │
   │  │ IGNORE if:                                                          │   │
+  │  │   • slot is not current or next                                    │   │
+  │  │   • SignedProposerPreferences for this slot not yet seen           │   │
   │  │   • Already seen valid bid from this builder for this slot         │   │
   │  │   • Not the highest value bid for this slot+parent                 │   │
   │  │   • Builder doesn't have sufficient balance                        │   │
   │  │   • parent_block_hash unknown in fork choice                       │   │
   │  │   • parent_block_root unknown in fork choice                       │   │
-  │  │   • slot is not current or next                                    │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
   │  execution_payload                                                          │
@@ -1250,10 +1262,11 @@ A Complete Visual Guide
   │  DataColumnSidecar {                    DataColumnSidecar {                 │
   │    index                                  index                             │
   │    column                                 column                            │
-  │    kzg_commitments                        kzg_commitments                   │
-  │    kzg_proofs                             kzg_proofs                        │
+  │    kzg_commitments                        kzg_proofs                        │
+  │    kzg_proofs                                                               │
   │                                                                             │
   │    signed_block_header ❌ REMOVED                                           │
+  │    kzg_commitments ❌ REMOVED (now in bid)                                  │
   │    kzg_commitments_inclusion_proof ❌                                       │
   │                                                                             │
   │                                           slot ✅ NEW                       │
@@ -1271,7 +1284,7 @@ A Complete Visual Guide
   │  AFTER:  BUILDER distributes sidecars, not proposer!                        │
   │          Verification is done differently:                                  │
   │          1. Get bid from beacon block                                       │
-  │          2. Check hash(sidecar.kzg_commitments) == bid.blob_kzg_commitments_root│
+  │          2. KZG commitments are in bid.blob_kzg_commitments directly       │
   │          3. Verify slot and beacon_block_root match                         │
   │                                                                             │
   │          → No proposer signature needed on sidecars                         │
@@ -1283,27 +1296,23 @@ A Complete Visual Guide
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
-  │  │  def verify_data_column_sidecar(sidecar):                           │   │
+  │  │  def verify_data_column_sidecar(sidecar, kzg_commitments):           │   │
   │  │      # Index must be valid                                          │   │
   │  │      if sidecar.index >= NUMBER_OF_COLUMNS: return False            │   │
   │  │                                                                     │   │
   │  │      # Must have blobs                                              │   │
-  │  │      if len(sidecar.kzg_commitments) == 0: return False             │   │
+  │  │      if len(sidecar.column) == 0: return False                      │   │
   │  │                                                                     │   │
-  │  │      # Must respect blob limit for this epoch                       │   │
-  │  │      epoch = compute_epoch_at_slot(sidecar.slot)                    │   │
-  │  │      max_blobs = get_blob_parameters(epoch).max_blobs_per_block     │   │
-  │  │      if len(sidecar.kzg_commitments) > max_blobs: return False      │   │
-  │  │                                                                     │   │
-  │  │      # Consistent lengths                                           │   │
-  │  │      if len(column) != len(commitments) or len(column) != len(proofs): return False│   │
+  │  │      # Consistent lengths (kzg_commitments passed from bid)         │   │
+  │  │      if len(column) != len(kzg_commitments) or len(column) != len(proofs): return False│   │
   │  │                                                                     │   │
   │  │      return True                                                    │   │
   │  │                                                                     │   │
   │  │  # On gossip, ALSO check:                                           │   │
-  │  │  # - beacon_block_root seen via valid bid                           │   │
+  │  │  # - A valid block for the sidecar's slot has been seen             │   │
+  │  │  #   (MUST queue for deferred validation if not yet seen)           │   │
   │  │  # - slot matches block slot                                        │   │
-  │  │  # - hash(kzg_commitments) matches bid.blob_kzg_commitments_root    │   │
+  │  │  # - verify using bid.blob_kzg_commitments from the block           │   │
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
@@ -1398,7 +1407,7 @@ A Complete Visual Guide
   │  │  • Attest, propose, sync committee   • Only build & reveal payloads   │ │
   │  │  • Earn attestation rewards          • Earn MEV profits               │ │
   │  │  • Can be slashed for misdeeds       • Stake covers bid obligations   │ │
-  │  │  • MIN_ACTIVATION_BALANCE = 32 ETH   • No minimum activation balance  │ │
+  │  │  • MIN_ACTIVATION_BALANCE = 32 ETH   • MIN_DEPOSIT_AMOUNT (1 ETH) min  │ │
   │  │                                                                       │ │
   │  └───────────────────────────────────────────────────────────────────────┘ │
   │                                                                             │
@@ -1412,7 +1421,7 @@ A Complete Visual Guide
   │  │ deposit_data = DepositData(                                         │   │
   │  │     pubkey = your_bls_pubkey,                                       │   │
   │  │     withdrawal_credentials = 0x03 + 0x00*11 + your_execution_addr,  │   │
-  │  │     amount = any_amount,  # No minimum! But need enough for bids    │   │
+  │  │     amount = MIN_DEPOSIT_AMOUNT or more,  # At least 1 ETH           │   │
   │  │     signature = sign(deposit_data)                                  │   │
   │  │ )                                                                   │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -1452,8 +1461,8 @@ A Complete Visual Guide
   │  │  • Separate registry              • Validator registry              │   │
   │  │  • BuilderIndex type              • ValidatorIndex type             │   │
   │  │  • No validation duties           • Must attest, propose, etc.      │   │
-  │  │  • No minimum balance             • Need 32 ETH to activate         │   │
-  │  │  • ~18 day exit delay             • ~27 hour exit delay             │   │
+  │  │  • MIN_DEPOSIT_AMOUNT (1 ETH)     • Need 32 ETH to activate         │   │
+  │  │  • ~6.8 hour exit delay           • ~27 hour exit delay             │   │
   │  │  • CAN submit execution bids      • CAN self-build (special index)  │   │
   │  │  • CAN pay proposers              • N/A                             │   │
   │  │                                                                     │   │
@@ -1466,10 +1475,11 @@ A Complete Visual Guide
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
   │  │  1. Initiate exit via voluntary exit message                        │   │
-  │  │  2. Wait MIN_BUILDER_WITHDRAWABILITY_DELAY (4096 epochs ≈ 18 days)  │   │
+  │  │  2. Wait MIN_BUILDER_WITHDRAWABILITY_DELAY (64 epochs ≈ 6.8 hours)  │   │
   │  │  3. Balance withdrawn to execution_address                          │   │
   │  │                                                                     │   │
-  │  │  Why 18 days? Ensures all pending payments are settled before exit. │   │
+  │  │  Why 64 epochs? Balances cost of locking ETH vs preventing sweep   │   │
+  │  │  stalling attacks from repeated builder deposit/exit cycles.        │   │
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
@@ -1539,7 +1549,7 @@ A Complete Visual Guide
   │  │      slot = target_slot,                       # Current or next    │   │
   │  │      value = payment_amount,                   # What I'll pay      │   │
   │  │      execution_payment = 0,                    # Must be 0 for gossip│   │
-  │  │      blob_kzg_commitments_root = hash_tree_root(blobs.commitments), │   │
+  │  │      blob_kzg_commitments = blobs.commitments, │   │
   │  │  )                                                                  │   │
   │  │                                                                     │   │
   │  │  signed_bid = SignedExecutionPayloadBid(                            │   │
@@ -1563,7 +1573,7 @@ A Complete Visual Guide
   │  │                                                                     │   │
   │  │    if included_bid.builder_index == my_builder_index:               │   │
   │  │        # MY BID WAS SELECTED!                                       │   │
-  │  │        # Reveal payload; payment only if same-slot quorum reached   │   │
+  │  │        # Reveal payload; payment queued immediately on delivery      │   │
   │  │        proceed to Phase 4                                           │   │
   │  │    else:                                                            │   │
   │  │        # Different builder won, I keep my payload                   │   │
@@ -1582,7 +1592,6 @@ A Complete Visual Guide
   │  │      builder_index = my_builder_index,   # BuilderIndex type        │   │
   │  │      beacon_block_root = hash_tree_root(received_block),            │   │
   │  │      slot = received_block.slot,                                    │   │
-  │  │      blob_kzg_commitments = stored_commitments,                     │   │
   │  │      state_root = compute_post_state_root(...)  # After processing │   │
   │  │  )                                                                  │   │
   │  │                                                                     │   │
@@ -1887,7 +1896,6 @@ A Complete Visual Guide
   │      │                                                                  │   │
   │      │    if payment.weight >= quorum (60% of per-slot stake):          │   │
   │      │        → Move to builder_pending_withdrawals                     │   │
-  │      │        → Set withdrawable_epoch                                  │   │
   │      │        → Builder will pay proposer!                              │   │
   │      │    else:                                                         │   │
   │      │        → Discard payment                                         │   │
@@ -1914,9 +1922,9 @@ A Complete Visual Guide
   │  2. UNCONDITIONAL PAYMENT                                                   │
   │  ════════════════════════                                                   │
   │  • Builder commits to payment via bid                                       │
-  │  • Payment happens regardless of payload reveal                             │
+  │  • If payload delivered: payment queued immediately                         │
+  │  • If payload withheld: payment still happens if quorum reached             │
   │  • Prevents griefing attacks on proposers                                   │
-  │  • Builder stake backs the payment                                          │
   │                                                                             │
   │  3. TWO-PHASE STATE TRANSITION                                              │
   │  ═════════════════════════════                                              │
@@ -1924,12 +1932,12 @@ A Complete Visual Guide
   │  • Phase 2: Process execution payload (if revealed)                         │
   │  • Fork choice tracks EMPTY vs FULL versions                                │
   │                                                                             │
-  │  4. NEW VALIDATOR TYPE: BUILDER                                             │
-  │  ═════════════════════════════                                              │
+  │  4. NEW STAKED ACTOR TYPE: BUILDER                                          │
+  │  ════════════════════════════════                                           │
   │  • 0x03 withdrawal credential prefix                                        │
-  │  • Same activation as validators                                            │
+  │  • Separate registry (state.builders), NOT validators                       │
   │  • Can submit bids and pay proposers                                        │
-  │  • Subject to slashing (affects payment timing)                             │
+  │  • No validation duties (no attesting, no proposing)                        │
   │                                                                             │
   │  5. PAYLOAD TIMELINESS COMMITTEE (PTC)                                      │
   │  ═════════════════════════════════════                                      │
@@ -1947,8 +1955,8 @@ A Complete Visual Guide
   │  7. SIMPLER BLOB DISTRIBUTION                                               │
   │  ═════════════════════════════                                              │
   │  • Builder distributes DataColumnSidecars (not proposer)                    │
-  │  • Sidecar structure simplified (no header/proof)                           │
-  │  • Verified via bid.blob_kzg_commitments_root                               │
+  │  • Sidecar structure simplified (no header/proof/commitments)               │
+  │  • KZG commitments now in bid, verified via bid.blob_kzg_commitments        │
   │                                                                             │
   │  8. NO MORE TRUSTED RELAYS                                                  │
   │  ═════════════════════════                                                  │
@@ -1968,7 +1976,7 @@ A Complete Visual Guide
   │  │ File              │ Key Concepts                                     │   │
   │  ├───────────────────┼──────────────────────────────────────────────────┤   │
   │  │ beacon-chain.md   │ • All new containers (Bid, Envelope, PTC types)  │   │
-  │  │ (same as gloas.md)│ • Modified BeaconState and BeaconBlockBody       │   │
+  │  │                   │ • Modified BeaconState and BeaconBlockBody       │   │
   │  │                   │ • State transition (process_block, etc.)         │   │
   │  │                   │ • Payment quorum and withdrawal logic            │   │
   │  │                   │ • Builder credentials (0x03 prefix)              │   │
@@ -2000,6 +2008,7 @@ A Complete Visual Guide
   │  │ fork.md           │ • GLOAS_FORK_VERSION and GLOAS_FORK_EPOCH        │   │
   │  │                   │ • upgrade_to_gloas() function                    │   │
   │  │                   │ • State migration from Fulu                      │   │
+  │  │                   │ • onboard_builders_from_pending_deposits()       │   │
   │  └───────────────────┴──────────────────────────────────────────────────┘   │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
@@ -2151,17 +2160,15 @@ The value is chosen to balance security margins with practical constraints on bl
 
 #### Configuration Constants
 
-**`MIN_BUILDER_WITHDRAWABILITY_DELAY`** = `4096` epochs (≈ 18 days)
+**`MIN_BUILDER_WITHDRAWABILITY_DELAY`** = `64` epochs (≈ 6.8 hours)
 
 **What:** Minimum wait time before a builder can withdraw after initiating exit.
 
-**Why it exists:** This is much longer than validator exit delays (~27 hours). Why?
+**Why it exists:** This delay prevents a sweep-stalling attack where an attacker repeatedly deposits and exits builders to block validator withdrawals. The 64-epoch value balances:
 
-1. **Payment settlement:** Builder payments take time to confirm (quorum gathering, epoch processing). A builder might have pending payments that aren't finalized yet.
-2. **Fraud prevention:** If a builder commits fraud, the long delay ensures they can't quickly exit and escape with stake before the fraud is detected.
-3. **Economic security:** Builders handle larger sums (MEV) than individual validators. Longer delays provide stronger guarantees.
-
-18 days ensures all possible pending payments have definitively settled or expired before the builder can withdraw.
+1. **Attack cost:** An attacker would need ~32,768 ETH locked to sustain stalling the validator sweep (at 1 ETH per builder), costing ~$18,853/day in opportunity cost at 7% APY.
+2. **Usability:** Builders can exit relatively quickly compared to the previous ~18-day delay.
+3. **Payment settlement:** Builder payments settle within 2 epochs, so 64 epochs provides ample margin.
 
 ---
 
@@ -2308,12 +2315,12 @@ Aggregation reduces block size—instead of 512 individual signatures, we get a 
 ---
 
 **`ExecutionPayloadBid`**
-- **Fields:** `parent_block_hash`, `parent_block_root`, `block_hash`, `prev_randao`, `fee_recipient`, `gas_limit`, `builder_index`, `slot`, `value`, `execution_payment`, `blob_kzg_commitments_root`
+- **Fields:** `parent_block_hash`, `parent_block_root`, `block_hash`, `prev_randao`, `fee_recipient`, `gas_limit`, `builder_index`, `slot`, `value`, `execution_payment`, `blob_kzg_commitments`
 
 **Why it exists:** This is the core of ePBS—the builder's cryptographic commitment. Key fields:
 - `block_hash`: Commits to the EXACT payload the builder will reveal (can't change later)
 - `value`: How much the builder will pay the proposer (from their staked balance)
-- `blob_kzg_commitments_root`: Commits to the blob data too (for data availability)
+- `blob_kzg_commitments`: The actual blob KZG commitments (moved here from the envelope, so they're committed at bid time)
 - `fee_recipient` / `gas_limit`: Must match proposer's preferences (ensures builder respects proposer's wishes)
 - `execution_payment`: Reserved for trusted out-of-protocol auctions (must be 0 for public gossip)
 
@@ -2332,13 +2339,14 @@ Without signatures, anyone could forge bids or claim to be a builder.
 ---
 
 **`ExecutionPayloadEnvelope`**
-- **Fields:** `payload`, `execution_requests`, `builder_index`, `beacon_block_root`, `slot`, `blob_kzg_commitments`, `state_root`
+- **Fields:** `payload`, `execution_requests`, `builder_index`, `beacon_block_root`, `slot`, `state_root`
 
 **Why it exists:** After the beacon block is published, the builder reveals their payload in this envelope:
 - `payload`: The actual execution payload (transactions, state changes)
 - `beacon_block_root`: Links this envelope to the specific block that included the bid
-- `blob_kzg_commitments`: The actual commitments (bid only had the root/hash)
 - `state_root`: Post-execution state root (enables stateless validation)
+
+Note: `blob_kzg_commitments` was moved from the envelope to the bid, so commitments are locked in at bid time rather than reveal time.
 
 The envelope lets nodes verify the payload matches the bid commitment and execute the state transition.
 
@@ -2417,16 +2425,16 @@ Fork choice now picks the best `(root, status)` pair, not just the best root. Th
 
 **`DataColumnSidecar`**
 - **Added:** `slot`, `beacon_block_root`
-- **Removed:** `signed_block_header`, `kzg_commitments_inclusion_proof`
+- **Removed:** `signed_block_header`, `kzg_commitments`, `kzg_commitments_inclusion_proof`
 
 **Why it changed:** Pre-GLOAS, sidecars needed a signed block header and merkle proof because PROPOSERS distributed them—you needed to verify the proposer authorized this data.
 
-Post-GLOAS, BUILDERS distribute sidecars. Verification is simpler:
+Post-GLOAS, BUILDERS distribute sidecars. The KZG commitments are now stored in the bid (`bid.blob_kzg_commitments`), not in the sidecar. Verification is simpler:
 1. Look up the bid in the beacon block
-2. Check `hash(sidecar.kzg_commitments) == bid.blob_kzg_commitments_root`
+2. Use `bid.blob_kzg_commitments` directly for verification
 3. Verify `slot` and `beacon_block_root` match
 
-No proposer signature needed—the bid commitment handles authenticity.
+No proposer signature needed—the bid commitment handles authenticity. A new `verify_data_column_sidecar_kzg_proofs` function takes `kzg_commitments` as a parameter alongside the sidecar.
 
 ---
 
@@ -2586,11 +2594,11 @@ The modification adds: if this attestation is for the current slot, add the atte
 
 **`get_expected_withdrawals(state)`** — MODIFIED
 
-**Why it changed:** Withdrawals now include multiple new categories. The function builds the withdrawal list in this order:
+**Why it changed:** Withdrawals now include multiple new categories and the return type is the new `ExpectedWithdrawals` dataclass (instead of a tuple). The function builds the withdrawal list in this order:
 1. **Builder withdrawals** (`get_builder_withdrawals`): Payments from builders to proposers that reached quorum
 2. **Partial withdrawals** (`get_pending_partial_withdrawals`): Validator partial balance withdrawals (existing)
 3. **Builder sweep withdrawals** (`get_builders_sweep_withdrawals`): Builder balance withdrawals when exiting
-4. **Validator sweep withdrawals** (`get_validators_sweep_withdrawals`): Regular validator sweep (existing)
+4. **Validator sweep withdrawals** (`get_validators_sweep_withdrawals`): Regular validator sweep (existing, at least one space reserved)
 
 This ordering ensures builder payments are processed first, then existing withdrawal types, then builder exits.
 
@@ -2686,6 +2694,12 @@ Key insight: FULL doesn't always win! If `should_extend_payload` returns false, 
 
 ---
 
+**`get_attestation_score(store, node, state)`** — MODIFIED
+
+**Why it changed:** This function was refactored out of `get_weight` for clarity. It computes the total effective balance of validators whose latest message supports the given `ForkChoiceNode` (using `is_supporting_vote`). The function now takes a `ForkChoiceNode` instead of a plain root, since votes must match both the block root and payload status.
+
+---
+
 **Timing Functions** — MODIFIED
 
 Functions like `get_attestation_due_ms`, `get_aggregate_due_ms`, etc. are all modified to implement the new GLOAS slot timeline:
@@ -2741,6 +2755,9 @@ The shift gives builders and PTC more time while maintaining the overall slot st
    - `execution_payload_availability`: All 1s (`0b1` for each slot)—assumes all pre-fork payloads were delivered
    - `latest_block_hash`: Set to `pre.latest_execution_payload_header.block_hash` (continuity from pre-fork)
 3. Removes `latest_execution_payload_header` (replaced by bid/envelope system)
+4. Calls `onboard_builders_from_pending_deposits()` to process any pending builder deposits, allowing builders to be active immediately at the fork
+
+**`onboard_builders_from_pending_deposits()`** processes pending deposits at the fork boundary, routing builder deposits (0x03 credentials or existing builder pubkeys) to the builder registry while keeping validator deposits in the pending queue. This ensures builders who deposited before the fork can start building blocks right away.
 
 This is the one-time migration that enables ePBS.
 
@@ -2820,9 +2837,9 @@ Validation must check that the attested `(root, index)` pair is valid in fork ch
 
 **Why it changed:** Sidecars now come from BUILDERS, not proposers. Validation uses:
 - `beacon_block_root` + `slot` to identify the block
-- Check `hash(kzg_commitments) == bid.blob_kzg_commitments_root`
+- KZG commitments from `bid.blob_kzg_commitments` for verification
 
-No proposer signature needed—the bid commitment provides authenticity.
+No proposer signature needed—the bid commitment provides authenticity. Clients MUST queue sidecars for deferred validation if the block hasn't been seen yet, and MUST re-broadcast after successful deferred validation.
 
 ---
 
@@ -2910,9 +2927,9 @@ These are two different thresholds in the validator lifecycle:
 
 ---
 
-### Q2: Do builders need 64 ETH (32 + 32)?
+### Q2: How much ETH do builders need?
 
-**No!** Builders need **32 ETH to activate** (same as any validator). The 32 ETH is a **reserve** they must keep - they can only use balance **above** 32 ETH for payments.
+Builders have **no minimum activation balance** (unlike validators which need 32 ETH). However, they must keep a reserve of `MIN_DEPOSIT_AMOUNT` (1 ETH). They can only bid with balance **above** the reserve plus any pending obligations.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -2925,15 +2942,15 @@ These are two different thresholds in the validator lifecycle:
 │  │                                                                     │   │
 │  │   50 ETH total                                                      │   │
 │  │   ┌─────────────────────────────────────────────────────────────┐  │   │
-│  │   │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│░░░░░░░░░░░░░░░░░░░░░░░░░░│  │   │
-│  │   │         32 ETH                 │        18 ETH              │  │   │
-│  │   │      (LOCKED RESERVE)          │   (AVAILABLE FOR BIDS)     │  │   │
-│  │   │   MIN_ACTIVATION_BALANCE       │                            │  │   │
+│  │   │▓▓│░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│  │   │
+│  │   │1E│                    49 ETH                                │  │   │
+│  │   │  │              (AVAILABLE FOR BIDS)                        │  │   │
+│  │   │  │  MIN_DEPOSIT_AMOUNT reserve (1 ETH)                     │  │   │
 │  │   └─────────────────────────────────────────────────────────────┘  │   │
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  The builder can bid UP TO 18 ETH (if no pending obligations)               │
+│  The builder can bid UP TO 49 ETH (if no pending obligations)               │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -2945,9 +2962,7 @@ These are two different thresholds in the validator lifecycle:
 From `process_execution_payload_bid`:
 ```python
 assert (
-    amount == 0
-    or state.balances[builder_index]
-    >= amount + pending_payments + pending_withdrawals + MIN_ACTIVATION_BALANCE
+    can_builder_cover_bid(state, builder_index, amount)
 )
 ```
 
@@ -2979,14 +2994,13 @@ These represent **money already committed** from previous bids. You can't spend 
 │  SLOT 101: Bob wants to bid again. How much can he bid?                     │
 │  ═══════════════════════════════════════════════════════════════════════   │
 │                                                                             │
-│    Check: balance >= amount + pending_payments + pending_withdrawals        │
-│                       + MIN_ACTIVATION_BALANCE                              │
+│    Check: can_builder_cover_bid(state, Bob, X)                              │
+│    min_balance = MIN_DEPOSIT_AMOUNT + pending_withdrawals                   │
+│             = 1 ETH + 0 ETH = 1 ETH                                        │
+│    available = 50 - 1 - 5 (pending_payments) = 44 ETH                       │
+│    X <= 44 ETH  ◄── Max new bid!                                            │
 │                                                                             │
-│            50 ETH >= X + 5 ETH + 0 ETH + 32 ETH                              │
-│            50 ETH >= X + 37 ETH                                             │
-│            X <= 13 ETH  ◄── Max new bid!                                    │
-│                                                                             │
-│    Bob can bid up to 13 ETH on slot 101                                     │
+│    Bob can bid up to 44 ETH on slot 101                                     │
 │                                                                             │
 │  ═══════════════════════════════════════════════════════════════════════   │
 │  SLOT 101: Bob bids 10 ETH, gets included                                   │
@@ -3007,9 +3021,9 @@ These represent **money already committed** from previous bids. You can't spend 
 │  SLOT 150: Bob wants to bid again. How much?                                │
 │  ═══════════════════════════════════════════════════════════════════════   │
 │                                                                             │
-│    Check: 50 ETH >= X + 10 ETH + 5 ETH + 32 ETH                              │
-│            50 ETH >= X + 47 ETH                                             │
-│            X <= 3 ETH  ◄── Max new bid!                                     │
+│    min_balance = 1 + 5 (pending_withdrawals) = 6 ETH                         │
+│    available = 50 - 6 - 10 (pending_payments) = 34 ETH                      │
+│    X <= 34 ETH  ◄── Max new bid!                                            │
 │                                                                             │
 │  ═══════════════════════════════════════════════════════════════════════   │
 │  LATER: The 5 ETH pending_withdrawal gets processed                         │
@@ -3020,7 +3034,7 @@ These represent **money already committed** from previous bids. You can't spend 
 │    • Bob's balance: 50 - 5 = 45 ETH                                         │
 │    • pending_withdrawals: 0 ETH                                             │
 │                                                                             │
-│    Now Bob can bid: 45 - 10 - 0 - 32 = 3 ETH (same, balance dropped too)    │
+│    Now Bob can bid: 45 - 1 - 10 = 34 ETH (same, balance dropped too)        │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```

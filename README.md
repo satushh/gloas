@@ -515,6 +515,11 @@ A Complete Visual Guide
   │  FUNCTIONS: verify_execution_payload_bid_signature()                        │
   │             process_execution_payload_bid()                                 │
   │  GOSSIP: execution_payload_bid topic (p2p-interface.md)                     │
+  │  BEACON API:                                                                │
+  │    GET  /eth/v1/validator/execution_payload_bid/{slot}/{builder_index}      │
+  │         → Builder retrieves their execution payload bid to sign             │
+  │    POST /eth/v1/beacon/execution_payload_bid                                │
+  │         → Publishes a signed execution payload bid to the network           │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -579,6 +584,11 @@ A Complete Visual Guide
   │             process_execution_payload()                                     │
   │  GOSSIP: execution_payload topic (p2p-interface.md)                         │
   │  HANDLER: on_execution_payload() (fork-choice.md)                           │
+  │  BEACON API:                                                                │
+  │    GET  /eth/v1/validator/execution_payload_envelope/{slot}/{builder_index} │
+  │         → Builder retrieves their execution payload envelope to sign        │
+  │    POST /eth/v1/beacon/execution_payload_envelope                           │
+  │         → Publishes a signed execution payload envelope to the network      │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -676,6 +686,15 @@ A Complete Visual Guide
   │  GOSSIP: payload_attestation_message topic (p2p-interface.md)               │
   │  HANDLER: on_payload_attestation_message() (fork-choice.md)                 │
   │  VALIDATOR: get_ptc_assignment(), get_payload_attestation_message_signature()│
+  │  BEACON API:                                                                │
+  │    POST /eth/v1/validator/duties/ptc/{epoch}                                │
+  │         → Retrieves PTC duties for a given epoch and validator indices      │
+  │    GET  /eth/v1/validator/payload_attestation_data/{slot}                   │
+  │         → Produces the payload attestation data to be signed by PTC member  │
+  │    POST /eth/v1/beacon/pool/payload_attestations                            │
+  │         → Submits a signed payload attestation message to the pool          │
+  │    GET  /eth/v1/beacon/pool/payload_attestations                            │
+  │         → Retrieves payload attestations from the beacon node's pool        │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -1629,6 +1648,15 @@ A Complete Visual Guide
   │             get_data_column_sidecars(), get_data_column_sidecars_from_block()│
   │  CONSTANTS: BUILDER_WITHDRAWAL_PREFIX = 0x03                                │
   │             DOMAIN_BEACON_BUILDER = DomainType('0x0B000000')                │
+  │  BEACON API:                                                                │
+  │    GET  /eth/v1/validator/execution_payload_bid/{slot}/{builder_index}      │
+  │         → Builder retrieves their bid to sign                               │
+  │    POST /eth/v1/beacon/execution_payload_bid                                │
+  │         → Publishes signed bid to network                                   │
+  │    GET  /eth/v1/validator/execution_payload_envelope/{slot}/{builder_index} │
+  │         → Builder retrieves their envelope to sign after seeing block       │
+  │    POST /eth/v1/beacon/execution_payload_envelope                           │
+  │         → Publishes signed envelope to network                              │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -1771,6 +1799,17 @@ A Complete Visual Guide
   │  CONSTANTS: DOMAIN_PTC_ATTESTER = DomainType('0x0C000000')                  │
   │             PAYLOAD_ATTESTATION_DUE_BPS = 7500 (75% into slot)              │
   │  CONTAINERS: PayloadAttestationMessage, PayloadAttestationData              │
+  │  BEACON API:                                                                │
+  │    GET  /eth/v4/validator/blocks/{slot}                                     │
+  │         → Proposer retrieves unsigned gloas BeaconBlock to sign             │
+  │    POST /eth/v2/beacon/blocks                                               │
+  │         → Proposer publishes signed BeaconBlock to network                  │
+  │    POST /eth/v1/validator/duties/ptc/{epoch}                                │
+  │         → Validator checks PTC duty assignments for the epoch               │
+  │    GET  /eth/v1/validator/payload_attestation_data/{slot}                   │
+  │         → PTC member retrieves payload attestation data to sign             │
+  │    POST /eth/v1/beacon/pool/payload_attestations                            │
+  │         → PTC member submits signed payload attestation                     │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -1903,6 +1942,29 @@ A Complete Visual Guide
   │      │        → (Maybe attack detected, or network issues)              │   │
   │      │                                                                  │   │
   │      └──────────────────────────────────────────────────────────────────┘   │
+  │                                                                             │
+  │  BEACON API SUMMARY (all new/modified endpoints for GLOAS):                 │
+  │  ═══════════════════════════════════════════════════════                    │
+  │                                                                             │
+  │  BeaconBlock:                                                               │
+  │    GET  /eth/v4/validator/blocks/{slot}         → Get block to sign         │
+  │    POST /eth/v2/beacon/blocks                   → Publish signed block      │
+  │                                                                             │
+  │  ExecutionPayloadBid:                                                       │
+  │    GET  /eth/v1/validator/execution_payload_bid/{slot}/{builder_index}      │
+  │    POST /eth/v1/beacon/execution_payload_bid                                │
+  │                                                                             │
+  │  ExecutionPayloadEnvelope:                                                  │
+  │    GET  /eth/v1/validator/execution_payload_envelope/{slot}/{builder_index} │
+  │    POST /eth/v1/beacon/execution_payload_envelope                           │
+  │                                                                             │
+  │  PTC (Payload Timeliness Committee):                                        │
+  │    POST /eth/v1/validator/duties/ptc/{epoch}    → Get PTC duties            │
+  │    GET  /eth/v1/validator/payload_attestation_data/{slot}                   │
+  │    POST /eth/v1/beacon/pool/payload_attestations                            │
+  │    GET  /eth/v1/beacon/pool/payload_attestations                            │
+  │                                                                             │
+  │  Reference: https://github.com/ethereum/beacon-APIs/pull/552                │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 

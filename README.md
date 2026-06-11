@@ -537,10 +537,10 @@ carries the EIP-7928 `block_access_list`.
   │  FUNCTIONS: verify_execution_payload_bid_signature()                        │
   │             process_execution_payload_bid()                                 │
   │  GOSSIP: execution_payload_bid topic (p2p-interface.md)                     │
-  │  BEACON API:                                                                │
-  │    GET  /eth/v1/validator/execution_payload_bid/{slot}/{builder_index}      │
+  │  BEACON API (beacon-APIs #552):                                             │
+  │    GET  /eth/v1/validator/execution_payload_bids/{slot}/{builder_index}     │
   │         → Builder retrieves their execution payload bid to sign             │
-  │    POST /eth/v1/beacon/execution_payload_bid                                │
+  │    POST /eth/v1/beacon/execution_payload_bids                               │
   │         → Publishes a signed execution payload bid to the network           │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
@@ -609,11 +609,14 @@ carries the EIP-7928 `block_access_list`.
   │             verify_execution_payload_envelope()                             │
   │  GOSSIP: execution_payload topic (p2p-interface.md)                         │
   │  HANDLER: on_execution_payload_envelope() (fork-choice.md)                  │
-  │  BEACON API:                                                                │
-  │    GET  /eth/v1/validator/execution_payload_envelope/{slot}/{builder_index} │
-  │         → Builder retrieves their execution payload envelope to sign        │
-  │    POST /eth/v1/beacon/execution_payload_envelope                           │
-  │         → Publishes a signed execution payload envelope to the network      │
+  │  BEACON API (beacon-APIs #552, plus open #580 cached/publish flow):         │
+  │    GET  /eth/v1/beacon/execution_payload_envelopes/{block_id}               │
+  │         → Retrieves an imported signed envelope for a beacon block          │
+  │    GET  /eth/v1/validator/execution_payload_envelopes/{slot}/               │
+  │         {beacon_block_root}                                                  │
+  │         → Open #580: cached self-build envelope to sign (stateful mode)     │
+  │    POST /eth/v1/beacon/execution_payload_envelopes                          │
+  │         → Open #580: publishes signed envelope to the network               │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -712,11 +715,11 @@ carries the EIP-7928 `block_access_list`.
   │  GOSSIP: payload_attestation_message topic (p2p-interface.md)               │
   │  HANDLER: on_payload_attestation_message() (fork-choice.md)                 │
   │  VALIDATOR: get_ptc_assignment(), get_payload_attestation_message_signature()│
-  │  BEACON API:                                                                │
+  │  BEACON API (beacon-APIs #552; open #612 clarifies 404 no-block case):      │
   │    POST /eth/v1/validator/duties/ptc/{epoch}                                │
   │         → Retrieves PTC duties for a given epoch and validator indices      │
   │    GET  /eth/v1/validator/payload_attestation_data/{slot}                   │
-  │         → Produces the payload attestation data to be signed by PTC member  │
+  │         → Produces data to sign; 404 means no block seen, so skip voting    │
   │    POST /eth/v1/beacon/pool/payload_attestations                            │
   │         → Submits a signed payload attestation message to the pool          │
   │    GET  /eth/v1/beacon/pool/payload_attestations                            │
@@ -1609,6 +1612,7 @@ carries the EIP-7928 `block_access_list`.
   │  ═══════════════════════════════════════                                    │
   │                                                                             │
   │  For trustless gossip bids, know the proposer's preferences first!         │
+  │  Beacon API proposal: POST /eth/v1/validator/proposer_preferences (#608)   │
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
@@ -1748,15 +1752,17 @@ carries the EIP-7928 `block_access_list`.
   │             get_data_column_sidecars(), get_data_column_sidecars_from_block()│
   │  CONSTANTS: BUILDER_WITHDRAWAL_PREFIX = 0x03                                │
   │             DOMAIN_BEACON_BUILDER = DomainType('0x0B000000')                │
-  │  BEACON API:                                                                │
-  │    GET  /eth/v1/validator/execution_payload_bid/{slot}/{builder_index}      │
+  │  BEACON API (current #552 plus open #580/#610/#614 proposals):              │
+  │    GET  /eth/v1/validator/execution_payload_bids/{slot}/{builder_index}     │
   │         → Builder retrieves their bid to sign                               │
-  │    POST /eth/v1/beacon/execution_payload_bid                                │
+  │    POST /eth/v1/beacon/execution_payload_bids                               │
   │         → Publishes signed bid to network                                   │
-  │    GET  /eth/v1/validator/execution_payload_envelope/{slot}/{builder_index} │
-  │         → Builder retrieves their envelope to sign after seeing block       │
-  │    POST /eth/v1/beacon/execution_payload_envelope                           │
-  │         → Publishes signed envelope to network                              │
+  │    GET  /eth/v1/beacon/execution_payload_envelopes/{block_id}               │
+  │         → Retrieves an imported signed envelope for a beacon block          │
+  │    POST /eth/v1/beacon/execution_payload_envelopes                          │
+  │         → Open #580: publishes signed envelope to network                   │
+  │    POST /eth/v1/beacon/states/{state_id}/builders                           │
+  │         → Open #614: builder index/status lookup for builder clients        │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -1904,17 +1910,19 @@ carries the EIP-7928 `block_access_list`.
   │  CONSTANTS: DOMAIN_PTC_ATTESTER = DomainType('0x0C000000')                  │
   │             PAYLOAD_ATTESTATION_DUE_BPS = 7500 (75% into slot)              │
   │  CONTAINERS: PayloadAttestationMessage, PayloadAttestationData              │
-  │  BEACON API:                                                                │
+  │  BEACON API (current #552 plus open #580/#608 proposals):                   │
   │    GET  /eth/v4/validator/blocks/{slot}                                     │
   │         → Proposer retrieves unsigned gloas BeaconBlock to sign             │
   │    POST /eth/v2/beacon/blocks                                               │
   │         → Proposer publishes signed BeaconBlock to network                  │
+  │    POST /eth/v1/validator/proposer_preferences                              │
+  │         → Open #608: publish signed fee recipient/gas preferences           │
   │    POST /eth/v1/validator/duties/ptc/{epoch}                                │
   │         → Validator checks PTC duty assignments for the epoch               │
   │    GET  /eth/v1/validator/payload_attestation_data/{slot}                   │
   │         → PTC member retrieves payload attestation data to sign             │
   │    POST /eth/v1/beacon/pool/payload_attestations                            │
-  │         → PTC member submits signed payload attestation                     │
+  │         → PTC member submits signed payload attestation message(s)          │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -2056,29 +2064,56 @@ carries the EIP-7928 `block_access_list`.
   │      │                                                                  │   │
   │      └──────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
-  │  BEACON API SUMMARY (EXTERNAL / PENDING, NOT IN LOCAL CONSENSUS SPECS):    │
-  │  ═══════════════════════════════════════════════════════════════════════    │
-  │  Local Gloas specs define gossip and req/resp; HTTP APIs may differ.       │
+  │  BEACON API SUMMARY (beacon-APIs checkout + open Gloas PRs):              │
+  │  ═════════════════════════════════════════════════════════════              │
+  │  Consensus specs define gossip/req-resp. HTTP APIs live in beacon-APIs.    │
+  │  "Open" means the endpoint is proposed in an open PR as of 2026-06-11.     │
   │                                                                             │
-  │  BeaconBlock:                                                               │
-  │    GET  /eth/v4/validator/blocks/{slot}         → Get block to sign         │
+  │  BeaconBlock / block production:                                           │
   │    POST /eth/v2/beacon/blocks                   → Publish signed block      │
+  │    GET  /eth/v2/beacon/blocks/{block_id}        → Read Gloas block          │
+  │    GET  /eth/v4/validator/blocks/{slot}         → Open #580 produceBlockV4  │
+  │         include_payload=true returns BlockContents for self-build; false    │
+  │         returns only BeaconBlock and keeps envelope/blobs cached in the BN  │
   │                                                                             │
   │  ExecutionPayloadBid:                                                       │
-  │    GET  /eth/v1/validator/execution_payload_bid/{slot}/{builder_index}      │
-  │    POST /eth/v1/beacon/execution_payload_bid                                │
+  │    GET  /eth/v1/validator/execution_payload_bids/{slot}/{builder_index}     │
+  │    POST /eth/v1/beacon/execution_payload_bids                               │
   │                                                                             │
   │  ExecutionPayloadEnvelope:                                                  │
-  │    GET  /eth/v1/validator/execution_payload_envelope/{slot}/{builder_index} │
-  │    POST /eth/v1/beacon/execution_payload_envelope                           │
+  │    GET  /eth/v1/beacon/execution_payload_envelopes/{block_id}               │
+  │    GET  /eth/v1/validator/execution_payload_envelopes/{slot}/               │
+  │         {beacon_block_root}                                                  │
+  │         → Open #580 cached self-build envelope for include_payload=false    │
+  │    POST /eth/v1/beacon/execution_payload_envelopes → Open #580 publish      │
   │                                                                             │
   │  PTC (Payload Timeliness Committee):                                        │
   │    POST /eth/v1/validator/duties/ptc/{epoch}    → Get PTC duties            │
   │    GET  /eth/v1/validator/payload_attestation_data/{slot}                   │
+  │         → Open #612: 404 means no block at slot; validator skips vote       │
   │    POST /eth/v1/beacon/pool/payload_attestations                            │
   │    GET  /eth/v1/beacon/pool/payload_attestations                            │
   │                                                                             │
-  │  Reference: https://github.com/ethereum/beacon-APIs/pull/552                │
+  │  Proposer preferences (open #608):                                          │
+  │    POST /eth/v1/validator/proposer_preferences                              │
+  │    EVENT proposer_preferences                                               │
+  │    Deprecated post-Gloas: prepare_beacon_proposer, register_validator       │
+  │    Updated post-Gloas: beacon_committee_subscriptions feeds CGC sizing      │
+  │                                                                             │
+  │  Builder registry lookup (open #610/#614, exact surface still in review):   │
+  │    GET/POST /eth/v1/beacon/states/{state_id}/builders                       │
+  │    GET      /eth/v1/beacon/states/{state_id}/builders/{builder_id}          │
+  │    GET/POST /eth/v1/beacon/states/{state_id}/builder_balances               │
+  │    POST     /eth/v1/beacon/states/{state_id}/builder_identities             │
+  │                                                                             │
+  │  Eventstream / debug:                                                       │
+  │    EVENT execution_payload_available, execution_payload_bid                 │
+  │    EVENT payload_attestation_message, execution_payload                     │
+  │    EVENT execution_payload_gossip                                           │
+  │    EVENT chain_reorg old_head_hash/new_head_hash → Open #585               │
+  │    GET /eth/v2/debug/fork_choice → Open #615 Gloas payload_status/PTC counts│
+  │                                                                             │
+  │  References: beacon-APIs PRs #552, #580, #585, #608, #610, #612, #614, #615 │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -2597,6 +2632,13 @@ This separation is what enables trustless proposer-builder separation—the prop
 
 ---
 
+**`PayloadAttributes`**
+- **Added:** `slot_number`, `target_gas_limit`
+
+**Why it changed:** The beacon node passes these to the execution layer when preparing a payload. `slot_number` binds the EL payload attributes to the beacon slot, while `target_gas_limit` carries the proposer preference that builders must respect.
+
+---
+
 **`BeaconState`**
 - **Added:** `builders`, `next_withdrawal_builder_index`, `latest_execution_payload_bid`, `execution_payload_availability`, `builder_pending_payments`, `builder_pending_withdrawals`, `latest_block_hash`, `payload_expected_withdrawals`, `ptc_window`
 - **Removed:** `latest_execution_payload_header`
@@ -2727,6 +2769,8 @@ A builder can't bid more than they can afford, preventing default scenarios.
 **`compute_balance_weighted_selection(state, indices, seed, size, shuffle)`**
 
 **Why it exists:** PTC selection must be sybil-resistant—validators with more stake should be proportionally more likely to be selected. Simple random selection would let someone with 1000 validators dominate the PTC. Balance-weighted selection ensures a validator with 64 ETH is twice as likely to be selected as one with 32 ETH. This is the core algorithm powering fair PTC composition.
+
+The same helper is also used for Gloas proposer-index computation and next sync committee selection, so balance-weighted sampling is not PTC-only.
 
 ---
 
@@ -3716,7 +3760,11 @@ set can change, so the old single-churn formula is no longer accurate.
 Gloas computes the churn term as:
 
 ```python
-delta = 2/3 * exit_churn + 1/3 * activation_churn + consolidation_churn
+delta = (
+    2 * get_exit_churn_limit(state) // 3
+    + get_activation_churn_limit(state) // 3
+    + get_consolidation_churn_limit(state)
+)
 ```
 
 That reflects the new lifecycle queues instead of pretending all churn flows use
@@ -3778,3 +3826,59 @@ The concept is still useful: a vote must match both the beacon block root and th
 payload status variant being scored. But implementers should follow the
 normative fork-choice functions directly rather than looking for an
 `is_supporting_vote` function in the spec.
+
+---
+
+### Q24: Which Beacon API endpoints are most important for learning Gloas?
+
+Start with the PR #552 endpoints already present in the local `beacon-APIs`
+checkout: `execution_payload_bids`, `execution_payload_envelopes`,
+`payload_attestation_data`, `duties/ptc`, and
+`beacon/pool/payload_attestations`.
+
+Then track the open Gloas PRs: PR #580 for `produceBlockV4` and envelope
+publishing, PR #608 for proposer preferences, PR #610/#614 for builder registry
+lookup, PR #612 for PTC no-block 404 semantics, PR #585 for reorg execution
+hashes, and PR #615 for Gloas-aware debug fork choice.
+
+---
+
+### Q25: Why does `produceBlockV4` have an `include_payload` option?
+
+Open beacon-APIs PR #580 proposes `GET /eth/v4/validator/blocks/{slot}` for
+post-Gloas block production. If a proposer self-builds:
+
+- `include_payload=true` returns `BlockContents`: beacon block, payload envelope,
+  blobs, and KZG proofs.
+- `include_payload=false` returns only the `BeaconBlock`; the beacon node keeps
+  the payload envelope and blobs cached, so publishing must go through that same
+  node.
+
+External builder bids still return only the beacon block because the beacon node
+does not have the builder's payload yet.
+
+---
+
+### Q26: What should a PTC validator do if `payload_attestation_data` returns 404?
+
+Open beacon-APIs PR #612 defines 404 from
+`GET /eth/v1/validator/payload_attestation_data/{slot}` as the expected "no block
+seen for that slot" signal.
+
+The validator should skip payload-attestation submission for that slot. It should
+not turn the response into a stale vote for some other block root.
+
+---
+
+### Q27: How do builders find their builder index and status?
+
+Builder registry lookup is still under open beacon-APIs review. PR #610 proposes
+state endpoints for listing builders, fetching a builder by index/pubkey, builder
+balances, and builder identities. PR #614 proposes the narrower POST query form:
+
+```text
+POST /eth/v1/beacon/states/{state_id}/builders
+```
+
+This matters because builder bids use `builder_index`, and clients need a
+standard way to resolve pubkeys, status, and balance before preparing bids.

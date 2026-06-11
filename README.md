@@ -1,6 +1,10 @@
-# GLOAS: Enshrined Proposer-Builder Separation (ePBS)
+# GLOAS: ePBS and Related Consensus-Layer Changes
 
 A Complete Visual Guide
+
+Scope note: the latest Gloas spec is more than EIP-7732/ePBS. It includes
+EIP-7732, EIP-7843, EIP-8045, and EIP-8061; the Gloas `ExecutionPayload` also
+carries the EIP-7928 `block_access_list`.
 
 ---
 
@@ -58,7 +62,7 @@ A Complete Visual Guide
   The GLOAS Solution: Protocol-Level PBS
 
   ┌─────────────────────────────────────────────────────────────────────────────┐
-  │                         GLOAS SYSTEM (EIP-7732)                             │
+  │                 GLOAS SYSTEM (EIP-7732 + companion EIPs)                    │
   │                                                                             │
   │   ┌──────────────┐                                   ┌──────────────┐       │
   │   │   BUILDER    │ ─────── BID ────────────────────► │  PROPOSER    │       │
@@ -82,7 +86,7 @@ A Complete Visual Guide
   │   SPEC ENTITIES:                   ▼                                        │
   │   • BUILDER_WITHDRAWAL_PREFIX = 0x03           ┌─────────────────┐          │
   │   • is_builder_withdrawal_credential()        │   TRUSTLESS!    │          │
-  │   • PTC_SIZE = 512 validators                  │  DECENTRALIZED  │          │
+  │   • PTC_SIZE = 512 positions                   │  DECENTRALIZED  │          │
   │   • get_ptc(state, slot)                       │  CENSORSHIP     │          │
   │                                                │  RESISTANT      │          │
   │                                                └─────────────────┘          │
@@ -569,6 +573,10 @@ A Complete Visual Guide
   │  │    │   • block_hash          ◄── Must match bid.block_hash!      │ │   │
   │  │    │   • transactions                                            │ │   │
   │  │    │   • withdrawals         ◄── Must match state expected!      │ │   │
+  │  │    │   • blob_gas_used                                           │ │   │
+  │  │    │   • excess_blob_gas                                         │ │   │
+  │  │    │   • block_access_list   ◄── EIP-7928                       │ │   │
+  │  │    │   • slot_number         ◄── Must match block slot!          │ │   │
   │  │    └─────────────────────────────────────────────────────────────┘ │   │
   │  │                                                                     │   │
   │  │    execution_requests: ExecutionRequests                            │   │
@@ -617,8 +625,9 @@ A Complete Visual Guide
   │                                                                             │
   │  WHAT IS THE PTC?                                                           │
   │  ════════════════                                                           │
-  │  A committee of 512 validators (PTC_SIZE = 2^9) selected per slot           │
-  │  to attest whether the execution payload was delivered on time.             │
+  │  A vector of 512 PTC positions (PTC_SIZE = 2^9) selected per slot           │
+  │  to attest payload timeliness and blob data availability.                   │
+  │  Selection can contain duplicate validators; each position counts.          │
   │                                                                             │
   │  ┌──────────────────────────────────────────────────────────────────────┐  │
   │  │                                                                      │  │
@@ -633,7 +642,7 @@ A Complete Visual Guide
   │  │   │ (64 vals)   │   ├────────►│  compute_balance_        │          │  │
   │  │   ├─────────────┤   │         │  weighted_selection()    │          │  │
   │  │   │ Committee 2 │   │         │                          │          │  │
-  │  │   │ (64 vals)   │   │         │  Selects 512 validators  │          │  │
+  │  │   │ (64 vals)   │   │         │  Selects 512 positions   │          │  │
   │  │   ├─────────────┤   │         │  weighted by stake       │          │  │
   │  │   │    ...      │ ──┘         │  (higher stake = more    │          │  │
   │  │   │ Committee N │              │   likely to be picked)  │          │  │
@@ -641,7 +650,7 @@ A Complete Visual Guide
   │  │                                            │                         │  │
   │  │                                            ▼                         │  │
   │  │                                 ┌──────────────────────┐             │  │
-  │  │                                 │   PTC (512 members)  │             │  │
+  │  │                                 │ PTC (512 positions) │              │  │
   │  │                                 │   for Slot N         │             │  │
   │  │                                 └──────────────────────┘             │  │
   │  │                                                                      │  │
@@ -1111,21 +1120,23 @@ A Complete Visual Guide
   │  │      # Ignore if not for the block's slot                           │   │
   │  │      if data.slot != state.slot: return                             │   │
   │  │                                                                     │   │
-  │  │      # Verify the validator is in the PTC                           │   │
-  │  │      assert msg.validator_index in ptc                              │   │
+  │  │      # Validator can appear multiple times in the PTC               │   │
+  │  │      ptc_indices = [i for i, v in enumerate(ptc)                    │   │
+  │  │                     if v == msg.validator_index]                    │   │
+  │  │      assert len(ptc_indices) > 0                                    │   │
   │  │                                                                     │   │
   │  │      # If from wire, ensure current slot and verify signature       │   │
   │  │      if not is_from_block:                                          │   │
   │  │          assert data.slot == get_current_slot(store)                │   │
   │  │          assert is_valid_indexed_payload_attestation(...)           │   │
   │  │                                                                     │   │
-  │  │      # Update the PTC vote tracking                                 │   │
-  │  │      ptc_index = ptc.index(msg.validator_index)                     │   │
+  │  │      # Update every PTC position held by this validator             │   │
   │  │      root = data.beacon_block_root                                  │   │
   │  │      timely_votes = store.payload_timeliness_vote[root]             │   │
   │  │      da_votes = store.payload_data_availability_vote[root]          │   │
-  │  │      timely_votes[ptc_index] = data.payload_present                 │   │
-  │  │      da_votes[ptc_index] = data.blob_data_available                 │   │
+  │  │      for ptc_index in ptc_indices:                                  │   │
+  │  │          timely_votes[ptc_index] = data.payload_present             │   │
+  │  │          da_votes[ptc_index] = data.blob_data_available             │   │
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
@@ -1162,6 +1173,26 @@ A Complete Visual Guide
   │  STORE FIELDS: payloads, payload_timeliness_vote,                           │
   │                payload_data_availability_vote (new)                         │
   │                                                                             │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+  5.5 Fast Confirmation Changes
+
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │                         FAST CONFIRMATION IN GLOAS                          │
+  ├─────────────────────────────────────────────────────────────────────────────┤
+  │                                                                             │
+  │  get_node_for_root(block_root):                                             │
+  │      return ForkChoiceNode(root=block_root, payload_status=PENDING)         │
+  │                                                                             │
+  │  Safe execution block hash:                                                 │
+  │      confirmed block's parent payload hash is safe                          │
+  │                                                                             │
+  │  WHY? A confirmed beacon block contains a bid for its own payload, but      │
+  │  that payload is only processed by a child block if the parent is FULL.     │
+  │  Therefore, the safe execution hash is:                                     │
+  │      confirmed.body.signed_execution_payload_bid.message.parent_block_hash  │
+  │                                                                             │
+  │  SPEC: fast-confirmation.md                                                 │
   └─────────────────────────────────────────────────────────────────────────────┘
 
   ---
@@ -1238,7 +1269,7 @@ A Complete Visual Guide
   │            (actual payload)                                                 │
   │                                                                             │
   │    PTC ────payload_attestation_message──► Network ───► Next proposer        │
-  │         (votes on payload timeliness)                                       │
+  │         (votes on timeliness + blob DA)                                     │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -1256,7 +1287,6 @@ A Complete Visual Guide
   │  │   • builder_index is not valid/active (is_active_builder fails)     │   │
   │  │   • execution_payment is non-zero (reserved for trusted auctions)  │   │
   │  │   • fee_recipient doesn't match proposer's preferences              │   │
-  │  │   • gas_limit is not compatible with proposer target_gas_limit      │   │
   │  │   • signature is invalid                                           │   │
   │  │                                                                     │   │
   │  │ IGNORE if:                                                          │   │
@@ -1266,6 +1296,7 @@ A Complete Visual Guide
   │  │   • Not the highest value bid for this slot+parent                 │   │
   │  │   • Builder doesn't have sufficient balance                        │   │
   │  │   • parent_block_hash unknown in fork choice                       │   │
+  │  │   • gas_limit not target-compatible with parent payload gas limit   │   │
   │  │   • parent_block_root unknown in fork choice                       │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
@@ -1372,7 +1403,8 @@ A Complete Visual Guide
   │  │      if len(sidecar.column) == 0: return False                      │   │
   │  │                                                                     │   │
   │  │      # Consistent lengths (kzg_commitments passed from bid)         │   │
-  │  │      if len(column) != len(kzg_commitments) or len(column) != len(proofs): return False│   │
+  │  │      if len(sidecar.column) != len(kzg_commitments): return False   │   │
+  │  │      if len(sidecar.column) != len(sidecar.kzg_proofs): return False│   │
   │  │                                                                     │   │
   │  │      return True                                                    │   │
   │  │                                                                     │   │
@@ -1729,7 +1761,7 @@ A Complete Visual Guide
   │  │                                                                     │   │
   │  │  if assignment is not None:                                         │   │
   │  │      # I'm on PTC duty for slot `assignment`!                       │   │
-  │  │      # Must vote on payload timeliness at 75% of that slot          │   │
+  │  │      # Must vote on timeliness + blob DA at 75% of that slot        │   │
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
@@ -1805,8 +1837,7 @@ A Complete Visual Guide
   │  │  3. Select a bid (highest value? most trusted builder?)             │   │
   │  │                                                                     │   │
   │  │  4. Verify bid is valid:                                            │   │
-  │  │     • Builder is active and not slashed                             │   │
-  │  │     • Builder has 0x03 credentials (unless self-build)              │   │
+  │  │     • Builder index is valid and active                             │   │
   │  │     • Builder has sufficient balance                                │   │
   │  │     • Bid slot matches current slot                                 │   │
   │  │     • Bid parent root matches my parent_root                        │   │
@@ -1965,9 +1996,9 @@ A Complete Visual Guide
   │  ══════════════════════════════════════                                     │
   │                                                                             │
   │      ┌──────────┐                                                           │
-  │      │   PTC    │ 512 validators vote on payload timeliness                 │
+  │      │   PTC    │ 512 positions vote on timeliness + blob DA                │
   │      │ (512     │                                                           │
-  │      │ members) │                                                           │
+  │      │positions)│                                                           │
   │      └────┬─────┘                                                           │
   │           │ PayloadAttestationMessage                                       │
   │           │ (payload_present = true/false)                                  │
@@ -2070,7 +2101,7 @@ A Complete Visual Guide
   │                                                                             │
   │  5. PAYLOAD TIMELINESS COMMITTEE (PTC)                                      │
   │  ═════════════════════════════════════                                      │
-  │  • 512 validators per slot                                                  │
+  │  • 512 PTC positions per slot                                               │
   │  • Balance-weighted selection (sybil resistant)                             │
   │  • Vote at 75% of slot                                                      │
   │  • Votes on payload timeliness and blob data availability                   │
@@ -2146,12 +2177,12 @@ A Complete Visual Guide
   ---
   Summary
 
-  GLOAS (EIP-7732) is a fundamental upgrade that enshrines Proposer-Builder Separation (ePBS) directly into the Ethereum consensus protocol. The key innovation is replacing trusted relays with protocol-enforced commitments:
+  GLOAS is a consensus-layer upgrade centered on EIP-7732/ePBS, plus companion changes such as SLOTNUM, churn updates, and payload shape updates. The key innovation is replacing trusted relays with protocol-enforced commitments:
 
   1. Builders stake ETH and submit cryptographic commitments (bids)
   2. Proposers select bids and include them in beacon blocks
   3. Builders reveal payloads after seeing their bid was selected
-  4. PTC (512 validators) votes on whether payloads arrived on time
+  4. PTC (512 positions, duplicates possible) votes on payload timeliness and blob DA
   5. Protocol finalizes payment via same-slot attestation quorum
 
   This creates a trustless, decentralized block building market where:
@@ -2202,7 +2233,7 @@ Detailed reference for constants, containers, and functions defined in the GLOAS
 
 **What:** Signing domain for Payload Timeliness Committee attestations.
 
-**Why it exists:** PTC members vote on whether they saw the execution payload arrive on time. These votes need their own domain because they serve a different purpose than regular attestations—they're about payload timeliness, not block validity. Separating the domain prevents a regular attestation from being misinterpreted as a PTC vote.
+**Why it exists:** PTC members vote on whether they saw the execution payload before the due time and whether blob data was available. These votes need their own domain because they serve a different purpose than regular attestations. Separating the domain prevents a regular attestation from being misinterpreted as a PTC vote.
 
 **`DOMAIN_PROPOSER_PREFERENCES`** = `DomainType('0x0D000000')`
 
@@ -2250,10 +2281,10 @@ This elegantly reuses existing deposit infrastructure for a new actor type.
 
 **`PTC_SIZE`** = `512`
 
-**What:** Number of validators in the Payload Timeliness Committee per slot.
+**What:** Number of PTC positions in the Payload Timeliness Committee per slot.
 
-**Why it exists:** The PTC votes on whether the payload arrived on time. 512 provides:
-- **Security:** Hard to bribe/corrupt a significant fraction of randomly-selected validators
+**Why it exists:** The PTC votes on payload timeliness and blob data availability. 512 provides:
+- **Security:** Hard to bribe/corrupt a significant fraction of randomly-selected positions
 - **Efficiency:** Small enough that votes can be aggregated into blocks without excessive overhead
 - **Decentralization:** Large enough sample from the full validator set
 
@@ -2308,7 +2339,7 @@ The value is chosen to balance security margins with practical constraints on bl
 
 **What:** Minimum PTC votes needed to consider a payload "timely."
 
-**Why it exists:** Fork choice needs to decide: was the payload delivered on time, or did the builder withhold? If >256 of 512 PTC members vote "present," we consider it timely. Simple majority (50%+1) prevents:
+**Why it exists:** Fork choice needs to decide: was the payload delivered on time, or did the builder withhold? If >256 of 512 PTC positions vote "present," we consider it timely. Simple majority (50%+1) prevents:
 - A minority of slow/offline PTC members from incorrectly marking a timely payload as late
 - An attacker from claiming timeliness by bribing only a minority
 
@@ -2455,7 +2486,7 @@ Aggregation reduces block size—instead of 512 individual signatures, we get a 
 - `fee_recipient` / `gas_limit`: Must match or be compatible with proposer's preferences (ensures builder respects proposer's wishes)
 - `execution_payment`: Reserved for trusted out-of-protocol auctions (must be 0 for public gossip)
 
-Once this bid is included in a block, the builder is committed—they MUST reveal a payload matching `block_hash` or forfeit their payment.
+Once this bid is included in a timely head block, the builder is expected to reveal a payload matching `block_hash`. An honest builder may withhold if the referenced block was not timely and is not the builder's head; payment only settles through FULL-parent processing or the quorum path.
 
 ---
 
@@ -2506,6 +2537,14 @@ Without this, builders would have to guess, and bids with wrong values would be 
 - Child blocks include `parent_execution_requests` when building on the parent's FULL payload
 
 This separation is what enables trustless proposer-builder separation—the proposer commits to a bid without seeing the payload contents.
+
+---
+
+**`ExecutionPayload`**
+- **Added/retained post-Deneb fields:** `blob_gas_used`, `excess_blob_gas`
+- **Added in Gloas payload shape:** `block_access_list` (EIP-7928), `slot_number` (EIP-7843)
+
+**Why it changed:** The payload is no longer in the beacon block body, but the envelope still carries the full execution payload. `slot_number` lets the payload bind to the beacon slot, and `block_access_list` carries the EIP-7928 payload data.
 
 ---
 
@@ -2627,7 +2666,8 @@ If the bid's committed `block_hash` equals the chain's `latest_block_hash`, the 
 
 **Why it exists:** Before accepting a bid into a block, we must verify the builder can actually pay. This function checks:
 ```
-min_balance = MIN_DEPOSIT_AMOUNT + pending_withdrawals_amount
+pending_balance = get_pending_balance_to_withdraw_for_builder(...)
+min_balance = MIN_DEPOSIT_AMOUNT + pending_balance
 available = builder_balance - min_balance
 return available >= bid_amount
 ```
@@ -2643,7 +2683,7 @@ A builder can't bid more than they can afford, preventing default scenarios.
 
 **`get_ptc(state, slot)`**
 
-**Why it exists:** Given a slot, which 512 validators form the Payload Timeliness Committee? This function computes the PTC by applying balance-weighted selection to that slot's attestation committees. The result is deterministic (same seed → same PTC), allowing all nodes to agree on committee membership.
+**Why it exists:** Given a slot, which 512 PTC positions form the Payload Timeliness Committee? This function computes the PTC by applying balance-weighted selection to that slot's attestation committees. The result is deterministic, can contain duplicate validators, and lets all nodes agree on committee positions.
 
 ---
 
@@ -2937,8 +2977,8 @@ Timing is critical—builders should reveal quickly so PTC can vote "present."
 
 **`payload_attestation_message`** — Message: `PayloadAttestationMessage`
 
-**Why it exists:** PTC members need to broadcast their observations about payload timeliness. This topic carries:
-- Individual votes on whether the payload arrived
+**Why it exists:** PTC members need to broadcast their observations about payload timeliness and blob data availability. This topic carries:
+- Individual votes on whether the payload arrived before `get_payload_due_ms()`
 - Votes on whether blob data is available
 - Data that will be aggregated for block inclusion
 
@@ -3009,6 +3049,10 @@ No proposer signature needed—the bid commitment provides authenticity. Clients
 - You're reconstructing state and need the execution data
 
 Request roots; receive matching envelopes. More targeted than by-range.
+
+Clients MUST support recent root requests over:
+`[max(GLOAS_FORK_EPOCH, current_epoch - compute_min_epochs_for_block_requests()), current_epoch]`.
+For older roots, peers may return `ResourceUnavailable` or omit the envelope.
 
 ---
 
@@ -3141,9 +3185,10 @@ These represent **money already committed** from previous bids. You can't spend 
 │  ═══════════════════════════════════════════════════════════════════════   │
 │                                                                             │
 │    Check: can_builder_cover_bid(state, Bob, X)                              │
-│    min_balance = MIN_DEPOSIT_AMOUNT + pending_withdrawals                   │
-│             = 1 ETH + 0 ETH = 1 ETH                                        │
-│    available = 50 - 1 - 5 (pending_payments) = 44 ETH                       │
+│    pending_balance = pending_payments + pending_withdrawals = 5 ETH         │
+│    min_balance = MIN_DEPOSIT_AMOUNT + pending_balance                       │
+│             = 1 ETH + 5 ETH = 6 ETH                                        │
+│    available = 50 - 6 = 44 ETH                                             │
 │    X <= 44 ETH  ◄── Max new bid!                                            │
 │                                                                             │
 │    Bob can bid up to 44 ETH on slot 101                                     │
@@ -3167,8 +3212,9 @@ These represent **money already committed** from previous bids. You can't spend 
 │  SLOT 150: Bob wants to bid again. How much?                                │
 │  ═══════════════════════════════════════════════════════════════════════   │
 │                                                                             │
-│    min_balance = 1 + 5 (pending_withdrawals) = 6 ETH                         │
-│    available = 50 - 6 - 10 (pending_payments) = 34 ETH                      │
+│    pending_balance = 10 (pending_payments) + 5 (pending_withdrawals)        │
+│    min_balance = 1 + 15 = 16 ETH                                           │
+│    available = 50 - 16 = 34 ETH                                            │
 │    X <= 34 ETH  ◄── Max new bid!                                            │
 │                                                                             │
 │  ═══════════════════════════════════════════════════════════════════════   │
@@ -3206,7 +3252,7 @@ These represent **money already committed** from previous bids. You can't spend 
 │  "I might have     "I definitely       "Money actually                      │
 │   to pay this"      owe this"           left my account"                    │
 │                                                                             │
-│  All three stages count against available balance for new bids!             │
+│  Pending obligations plus reduced balance constrain future bids!            │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -3311,3 +3357,164 @@ PTC members can vote with **different data**, so multiple aggregates may be need
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+### Q6: Why is `state_root` not a top-level envelope or bid field anymore?
+
+`state_root` still exists inside `ExecutionPayload`. It is not duplicated at the
+top level of `ExecutionPayloadEnvelope` or `ExecutionPayloadBid` because the bid
+commits to `block_hash`, and the execution block hash commits to the execution
+header, including `state_root`.
+
+The top-level envelope fields are for linking the payload to the beacon block and
+builder: `payload`, `execution_requests`, `builder_index`, `beacon_block_root`,
+and `parent_beacon_block_root`.
+
+---
+
+### Q7: Why does the bid commit to `block_hash`, `blob_kzg_commitments`, and `execution_requests_root` instead of carrying the whole payload?
+
+The bid is the small commitment that can go inside the beacon block. It commits
+to the important pieces without revealing the payload:
+
+- `block_hash`: commits to the execution payload contents, including the
+  execution header and transaction list root.
+- `blob_kzg_commitments`: commits to blob data availability at bid time.
+- `execution_requests_root`: commits to the EL-triggered requests that the child
+  beacon block will later process through `parent_execution_requests`.
+
+The full payload stays in `SignedExecutionPayloadEnvelope`, which the builder
+broadcasts after seeing the beacon block.
+
+---
+
+### Q8: Why are execution requests processed by the child block through `parent_execution_requests`?
+
+The parent beacon block is processed before the builder reveals its payload, so
+the parent cannot safely process execution requests from that payload during its
+own state transition.
+
+Instead, the child block decides whether it is building on the parent's FULL or
+EMPTY variant:
+
+- EMPTY parent: `parent_execution_requests` must be empty.
+- FULL parent: `hash_tree_root(parent_execution_requests)` must match the
+  previous bid's `execution_requests_root`, then the requests are applied.
+
+This keeps gossip-time payload verification separate from deterministic beacon
+state transition.
+
+---
+
+### Q9: Why can a beacon block have EMPTY and FULL fork-choice variants?
+
+In Gloas, the beacon block and execution payload arrive separately. The beacon
+block can be valid even when the payload is missing, late, or not considered
+available by fork choice.
+
+Fork choice therefore tracks `(root, payload_status)` instead of only `root`:
+
+- `(root, PENDING)`: block seen, payload decision not resolved yet.
+- `(root, EMPTY)`: chain continues without applying that block's payload.
+- `(root, FULL)`: chain builds on the revealed and verified payload.
+
+This lets the chain keep moving without trusting the builder to reveal on time.
+
+---
+
+### Q10: Why does `should_build_on_full` sometimes build on the empty parent even if a payload exists locally?
+
+Local availability is not enough. For previous-slot heads, fork choice also uses
+the PTC view of payload timeliness and blob data availability.
+
+`should_build_on_full` returns false when the head is EMPTY, or when the PTC view
+says the payload was not timely or blob data was not available. This prevents a
+single node from extending a payload that it saw locally but the committee judged
+late or unavailable.
+
+---
+
+### Q11: Why does builder payment quorum use same-slot regular attestations instead of PTC votes?
+
+The payment quorum answers a different question from the PTC.
+
+- Same-slot regular attestations show that validators saw and voted for the
+  beacon block containing the bid. Their effective balances accumulate into the
+  builder payment's `weight`.
+- PTC votes happen later and judge payload timeliness plus blob data
+  availability.
+
+Payment is about whether the accepted bid should be honored. PTC is about which
+payload variant fork choice should extend.
+
+---
+
+### Q12: Why are builder withdrawals encoded using `BUILDER_INDEX_FLAG` in `Withdrawal.validator_index`?
+
+Withdrawals already have a `validator_index` field. Gloas reuses that container
+for builder withdrawals by setting `BUILDER_INDEX_FLAG` in the high bit.
+
+That gives a disjoint namespace:
+
+- normal validator withdrawal: `validator_index` without the flag
+- builder withdrawal: `builder_index | BUILDER_INDEX_FLAG`
+
+Helpers convert both ways, so execution-layer withdrawal processing can carry
+builder payments without adding a separate withdrawal container.
+
+---
+
+### Q13: Why are withdrawals deducted before the corresponding payload is confirmed, and what is `payload_expected_withdrawals` for?
+
+Withdrawals are deterministic from the beacon state and must be committed before
+the payload that uses them is confirmed. If the CL delayed deductions until the
+child slot, epoch processing or other state changes could reduce balances before
+the deduction, creating supply-accounting problems.
+
+So Gloas applies the withdrawal deduction during beacon block processing and
+stores the exact list in `state.payload_expected_withdrawals`. Later, envelope
+verification checks:
+
+```python
+hash_tree_root(payload.withdrawals) == hash_tree_root(state.payload_expected_withdrawals)
+```
+
+This creates a temporary CL/EL asymmetry, but it makes the committed payload
+withdrawals deterministic and supply-safe.
+
+---
+
+### Q14: Why did blob KZG commitments move into the bid, and why did `DataColumnSidecar` lose signed header/proof fields?
+
+Blob KZG commitments moved into `ExecutionPayloadBid` so the builder commits to
+blob data availability before the bid is selected. The payload envelope then has
+to match the bid's commitments.
+
+`DataColumnSidecar` no longer needs proposer signed-header and inclusion-proof
+fields because validation is anchored by:
+
+- `sidecar.beacon_block_root` and `sidecar.slot`
+- the bid in the referenced beacon block
+- `bid.blob_kzg_commitments`
+- `sidecar.column` and `sidecar.kzg_proofs`
+
+The builder, not the proposer, is responsible for broadcasting the sidecars.
+
+---
+
+### Q15: Why is the safe execution block hash the parent payload of the confirmed beacon block under Gloas?
+
+A confirmed Gloas beacon block contains a bid for its own execution payload, but
+that payload is not applied by that same block. It becomes part of the state only
+when a later child block builds on the parent as FULL.
+
+So the fast-confirmation safe execution hash is the confirmed block's parent
+payload hash:
+
+```python
+confirmed.body.signed_execution_payload_bid.message.parent_block_hash
+```
+
+The confirmed block's own `block_hash` is still only a commitment until it is
+processed through the FULL-parent path.

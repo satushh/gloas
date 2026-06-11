@@ -1287,6 +1287,7 @@ carries the EIP-7928 `block_access_list`.
   │  │   • builder_index is not valid/active (is_active_builder fails)     │   │
   │  │   • execution_payment is non-zero (reserved for trusted auctions)  │   │
   │  │   • fee_recipient doesn't match proposer's preferences              │   │
+  │  │   • too many blob_kzg_commitments for the blob schedule             │   │
   │  │   • bid.slot is not greater than parent beacon block slot           │   │
   │  │   • signature is invalid                                           │   │
   │  │                                                                     │   │
@@ -1411,7 +1412,7 @@ carries the EIP-7928 `block_access_list`.
   │  │                                                                     │   │
   │  │  # On gossip, ALSO check:                                           │   │
   │  │  # - A valid block for the sidecar's slot has been seen             │   │
-  │  │  #   (MUST queue for deferred validation if not yet seen)           │   │
+  │  │  #   (SHOULD queue for deferred validation if not yet seen)         │   │
   │  │  # - slot matches block slot                                        │   │
   │  │  # - verify using bid.blob_kzg_commitments from the block           │   │
   │  │                                                                     │   │
@@ -1586,8 +1587,9 @@ carries the EIP-7928 `block_access_list`.
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
   │  │  1. Initiate exit via voluntary exit message                        │   │
-  │  │  2. Wait MIN_BUILDER_WITHDRAWABILITY_DELAY (8192 epochs)            │   │
-  │  │  3. Balance withdrawn to execution_address                          │   │
+  │  │  2. Only valid if pending builder balance to withdraw is zero       │   │
+  │  │  3. Wait MIN_BUILDER_WITHDRAWABILITY_DELAY (8192 epochs)            │   │
+  │  │  4. Balance withdrawn to execution_address                          │   │
   │  │                                                                     │   │
   │  │  Delay prevents sweep-stalling from repeated builder deposit/exit   │   │
   │  │  cycles and leaves margin for payment settlement.                   │   │
@@ -2644,7 +2646,7 @@ No proposer signature needed—the bid commitment handles authenticity. A new `v
 
 **`is_builder_withdrawal_credential(withdrawal_credentials)`**
 
-**Why it exists:** When processing deposits, the protocol needs to route them to the correct registry. This function checks if credentials start with `0x03`—if so, route to builder registry; otherwise, route to validator registry. This is the gatekeeper that creates the builder/validator split.
+**Why it exists:** This helper only checks whether withdrawal credentials start with `0x03`. It does not route the deposit by itself. `process_deposit_request` applies the full routing rules: existing builder pubkeys top up builders, existing validator pubkeys stay validator-side, and new `0x03` deposits create builders only when no pending validator deposit blocks that pubkey.
 
 ---
 
@@ -2732,6 +2734,18 @@ The result is compared against accumulated `weight` in pending payments to deter
 3. At epoch boundary: check if quorum reached → move to withdrawal queue OR expired → discard
 
 Epoch processing is the natural place for this "end of period" accounting and for sliding the cached PTC lookahead window.
+
+---
+
+**`process_operations(state, body)`** — MODIFIED
+
+**Why it changed:** Execution-layer requests are no longer processed directly from the beacon block body. Gloas moves those requests into the payload envelope and applies them from the child block through `parent_execution_requests`.
+
+Key changes:
+1. Asserts `len(body.deposits) == 0`
+2. Removes direct `process_deposit_request`, `process_withdrawal_request`, and `process_consolidation_request` calls from block operations
+3. Processes `body.payload_attestations` with `process_payload_attestation`
+4. Leaves deposits/withdrawals/consolidations to `apply_parent_execution_payload` when the parent is FULL
 
 ---
 
@@ -3040,7 +3054,7 @@ Validation must check that the attested `(root, index)` pair is valid in fork ch
 - `beacon_block_root` + `slot` to identify the block
 - KZG commitments from `bid.blob_kzg_commitments` for verification
 
-No proposer signature needed—the bid commitment provides authenticity. Clients MUST queue sidecars for deferred validation if the block hasn't been seen yet, and MUST re-broadcast after successful deferred validation.
+No proposer signature needed—the bid commitment provides authenticity. Clients SHOULD queue sidecars for deferred validation if the block hasn't been seen yet, and MUST re-broadcast after successful deferred validation.
 
 ---
 

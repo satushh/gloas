@@ -1175,7 +1175,7 @@ carries the EIP-7928 `block_access_list`.
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
-  5.5 Fast Confirmation Changes
+  5.6 Fast Confirmation Changes
 
   ┌─────────────────────────────────────────────────────────────────────────────┐
   │                         FAST CONFIRMATION IN GLOAS                          │
@@ -1287,6 +1287,7 @@ carries the EIP-7928 `block_access_list`.
   │  │   • builder_index is not valid/active (is_active_builder fails)     │   │
   │  │   • execution_payment is non-zero (reserved for trusted auctions)  │   │
   │  │   • fee_recipient doesn't match proposer's preferences              │   │
+  │  │   • bid.slot is not greater than parent beacon block slot           │   │
   │  │   • signature is invalid                                           │   │
   │  │                                                                     │   │
   │  │ IGNORE if:                                                          │   │
@@ -1515,8 +1516,8 @@ carries the EIP-7928 `block_access_list`.
   │  STEP 1: Submit Builder Deposit                                             │
   │  ══════════════════════════════                                             │
   │                                                                             │
-  │  Builders deposit via the same deposit contract, but with a special         │
-  │  withdrawal credential format that routes them to the builder registry:     │
+  │  Builders deposit via the same deposit contract. New builders use a         │
+  │  builder withdrawal credential format, subject to routing checks:           │
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │ deposit_data = DepositData(                                         │   │
@@ -1527,12 +1528,21 @@ carries the EIP-7928 `block_access_list`.
   │  │ )                                                                   │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
-  │  The 0x03 prefix tells the protocol: "This is a builder, not a validator"   │
+  │  The 0x03 prefix is the builder-withdrawal credential prefix, but routing  │
+  │  still depends on the pubkey's existing state (see below).                 │
+  │                                                                             │
+  │  ROUTING RULES:                                                            │
+  │  ┌─────────────────────────────────────────────────────────────────────┐   │
+  │  │ • Existing builder pubkey: top up builder balance, any prefix       │   │
+  │  │ • Existing validator pubkey: route to validator side                │   │
+  │  │ • New pubkey + 0x03 + no pending validator deposit: new builder     │   │
+  │  │ • New pubkey with pending validator deposit: stay validator-side    │   │
+  │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
   │  STEP 2: Builder Entry Created                                              │
   │  ═════════════════════════════                                              │
   │                                                                             │
-  │  When processed, a Builder entry is created in state.builders:              │
+  │  When routed as a new builder deposit, a Builder entry is created:          │
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │ Builder(                                                            │   │
@@ -1714,12 +1724,15 @@ carries the EIP-7928 `block_access_list`.
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
-  │  │  If builder doesn't reveal payload:                                 │   │
+  │  │  If builder doesn't reveal payload on a timely head:                │   │
   │  │                                                                     │   │
   │  │  • PTC votes "payload_present = false"                              │   │
   │  │  • Payment still goes through if same-slot quorum reached!          │   │
   │  │  • Builder loses MEV opportunity                                    │   │
   │  │  • But proposer still gets paid (builder's stake)                   │   │
+  │  │                                                                     │   │
+  │  │  Honest withholding is allowed if the referenced block was not      │   │
+  │  │  timely and is not the builder's head.                              │   │
   │  │                                                                     │   │
   │  │  Payment finalization depends on same-slot attestation quorum       │   │
   │  │  Builders can't grief proposers if quorum is reached                │   │
@@ -2160,7 +2173,7 @@ carries the EIP-7928 `block_access_list`.
   │  │                   │ • Modified block proposal (select bid)           │   │
   │  │                   │ • Attestation index signaling                    │   │
   │  ├───────────────────┼──────────────────────────────────────────────────┤   │
-  │  │ builder.md        │ • How to become a builder (0x03 credentials)     │   │
+  │  │ builder.md        │ • Builder deposits and 0x03 routing rules        │   │
   │  │                   │ • Bid construction workflow                      │   │
   │  │                   │ • Payload envelope construction                  │   │
   │  │                   │ • DataColumnSidecar creation                     │   │
@@ -2267,13 +2280,15 @@ Detailed reference for constants, containers, and functions defined in the GLOAS
 
 **`BUILDER_WITHDRAWAL_PREFIX`** = `Bytes1('0x03')`
 
-**What:** The first byte of withdrawal credentials that routes a deposit to the builder registry.
+**What:** The first byte of withdrawal credentials used for new builder deposits.
 
-**Why it exists:** Ethereum already has withdrawal credential prefixes: `0x00` for BLS credentials, `0x01` for execution layer credentials, `0x02` for compounding validators. GLOAS adds `0x03` for builders. When the deposit contract processes a deposit, the first byte determines where it goes:
-- `0x00`, `0x01`, `0x02` → Creates/updates a `Validator` in `state.validators`
-- `0x03` → Creates/updates a `Builder` in `state.builders`
+**Why it exists:** Ethereum already has withdrawal credential prefixes: `0x00` for BLS credentials, `0x01` for execution layer credentials, `0x02` for compounding validators. GLOAS adds `0x03` for builder withdrawal credentials, but the prefix is not the only routing rule:
+- Existing builder pubkey → top up `state.builders`, regardless of prefix
+- Existing validator pubkey → validator-side deposit path
+- New pubkey + `0x03` + no pending validator deposit → create a builder
+- New pubkey blocked by a pending validator deposit → validator-side pending queue
 
-This elegantly reuses existing deposit infrastructure for a new actor type.
+This reuses existing deposit infrastructure while keeping builder and validator pubkeys from crossing registries accidentally.
 
 ---
 
@@ -2943,7 +2958,7 @@ The shift gives builders and PTC more time while maintaining the overall slot st
 3. Removes `latest_execution_payload_header` (replaced by bid/envelope system)
 4. Calls `onboard_builders_from_pending_deposits()` to process pending builder deposits that can be routed to the builder registry
 
-**`onboard_builders_from_pending_deposits()`** processes pending deposits at the fork boundary, routing builder deposits (0x03 credentials or existing builder pubkeys) to the builder registry while keeping validator deposits in the pending queue. This ensures builders who deposited before the fork can start building blocks right away.
+**`onboard_builders_from_pending_deposits()`** processes pending deposits at the fork boundary using the same routing rules: existing builder pubkeys top up builders, existing validator pubkeys stay validator-side, and new 0x03 builder credentials only create builders when not blocked by pending validator-deposit state.
 
 This is the one-time migration that enables ePBS.
 
@@ -2966,7 +2981,7 @@ This is the one-time migration that enables ePBS.
 
 **`execution_payload`** — Message: `SignedExecutionPayloadEnvelope`
 
-**Why it exists:** After a beacon block is published with a bid, the winning builder must reveal their payload. This topic is where:
+**Why it exists:** After a timely beacon block is published with a bid, the winning builder is expected to reveal their payload. Honest builders may withhold if the referenced block was not timely and is not their head. This topic is where:
 - The builder broadcasts the actual execution payload
 - All nodes receive it to complete the block
 - Fork choice updates from PENDING to FULL status
@@ -3066,6 +3081,53 @@ For older roots, peers may return `ResourceUnavailable` or omit the envelope.
 - Clients must separately fetch payloads via envelope methods
 
 This maintains backwards compatibility while supporting the new block structure.
+
+---
+
+### 9.6 Companion Fork Material
+
+**`ExecutionPayload.block_access_list: BlockAccessList`** — EIP-7928
+
+**Why it exists:** Gloas inherits the updated payload shape that includes
+`block_access_list`. The field lives inside `ExecutionPayload`, not the bid or
+top-level envelope. The bid commits to it indirectly through `block_hash`.
+
+---
+
+**`ExecutionPayload.slot_number` / SLOTNUM** — EIP-7843
+
+**Why it exists:** The execution payload carries the beacon slot number so the
+execution layer can expose SLOTNUM semantics and the consensus layer can verify
+`payload.slot_number == block.slot` during envelope validation.
+
+---
+
+**Slashed-validator proposer exclusion** — EIP-8045
+
+**Why it exists:** `get_beacon_proposer_indices` filters active validators by
+`not state.validators[index].slashed` before proposer selection. Slashed
+validators can still exist in the active set for other lifecycle purposes, but
+Gloas excludes them from newly computed proposer duties.
+
+---
+
+**Churn changes** — EIP-8061
+
+**New/modified constants:**
+- `CHURN_LIMIT_QUOTIENT_GLOAS`
+- `CONSOLIDATION_CHURN_LIMIT_QUOTIENT`
+- `MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS`
+
+**New/modified helpers:**
+- `get_activation_churn_limit(state)`: capped activation-only churn
+- `get_exit_churn_limit(state)`: uncapped exit churn
+- `get_consolidation_churn_limit(state)`: independent consolidation churn
+- `compute_exit_epoch_and_update_churn(state, exit_balance)`: uses exit churn
+
+**Why it exists:** Gloas separates activation, exit, and consolidation churn so
+one flow does not consume the whole shared churn budget. Deposits still consume
+activation-only churn, exits use exit churn, and consolidations use their own
+limit.
 
 ---
 
@@ -3518,3 +3580,47 @@ confirmed.body.signed_execution_payload_bid.message.parent_block_hash
 
 The confirmed block's own `block_hash` is still only a commitment until it is
 processed through the FULL-parent path.
+
+---
+
+### Q16: Why are slashed validators excluded from proposer selection?
+
+EIP-8045 changes `get_beacon_proposer_indices` so newly computed proposer duties
+come only from active, unslashed validators.
+
+Slashed validators remain in the validator set until they exit, but they have
+already committed a slashable offense. Excluding them from proposer selection
+prevents the protocol from assigning fresh block-production authority to actors
+that are already known to be slashable.
+
+---
+
+### Q17: Why does Gloas change churn limits?
+
+EIP-8061 separates activation, exit, and consolidation churn. Before this style
+of split, different validator lifecycle flows can compete for one shared churn
+budget.
+
+Gloas uses:
+
+- `get_activation_churn_limit`: capped activation churn for deposits
+- `get_exit_churn_limit`: uncapped exit churn for exits
+- `get_consolidation_churn_limit`: independent consolidation churn
+
+This gives the protocol more predictable control over each queue instead of
+letting one lifecycle operation starve the others.
+
+---
+
+### Q18: Why is `slot_number` / SLOTNUM added to the execution payload?
+
+EIP-7843 adds `slot_number` to `ExecutionPayload` so the execution payload is
+explicitly bound to the beacon slot. Gloas envelope validation checks:
+
+```python
+payload.slot_number == state.slot
+```
+
+That lets the execution layer expose SLOTNUM semantics and gives consensus a
+direct payload-level slot check instead of relying only on timestamp-derived
+inference.

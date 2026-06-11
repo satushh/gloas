@@ -2604,7 +2604,7 @@ The envelope lets nodes verify the payload matches the bid commitment. State pro
 - `fee_recipient`: Where the proposer wants to receive payment
 - `target_gas_limit`: The proposer's preferred gas target for the block
 
-Without this, builders would have to guess, and bids with wrong values would be rejected. Proposers may broadcast signed preferences for upcoming proposal slots in the proposer lookahead.
+Without this, builders would have to guess, and bids with wrong values would fail gossip or block validation. Proposers may broadcast signed preferences for upcoming proposal slots in the proposer lookahead.
 
 ---
 
@@ -3078,7 +3078,7 @@ This is the one-time migration that enables ePBS.
 - Proposers listen and select the highest-value valid bid
 - Other nodes can validate bids for fork choice purposes
 
-**Important:** Builders should wait for `SignedProposerPreferences` before bidding—bids with wrong `fee_recipient` or incompatible `gas_limit` will be rejected.
+**Important:** Builders should wait for `SignedProposerPreferences` before bidding. Bids with the wrong `fee_recipient` are rejected, and bids with incompatible `gas_limit` are ignored rather than forwarded.
 
 ---
 
@@ -3110,7 +3110,7 @@ Aggregators collect these messages and create `PayloadAttestation` aggregates fo
 - `fee_recipient`: Where to send payment
 - `target_gas_limit`: Preferred gas target for the payload
 
-Proposers may broadcast preferences for upcoming proposal slots in the proposer lookahead. Without this, builders would have to guess (and likely be rejected).
+Proposers may broadcast preferences for upcoming proposal slots in the proposer lookahead. Without this, builders would have to guess, and their bids would fail validation or be ignored.
 
 ---
 
@@ -3832,9 +3832,9 @@ normative fork-choice functions directly rather than looking for an
 ### Q24: Which Beacon API endpoints are most important for learning Gloas?
 
 Start with the PR #552 endpoints already present in the local `beacon-APIs`
-checkout: `execution_payload_bids`, `execution_payload_envelopes`,
-`payload_attestation_data`, `duties/ptc`, and
-`beacon/pool/payload_attestations`.
+checkout: `execution_payload_bids`, the `GET` form of
+`execution_payload_envelopes/{block_id}`, `payload_attestation_data`,
+`duties/ptc`, and `beacon/pool/payload_attestations`.
 
 Then track the open Gloas PRs: PR #580 for `produceBlockV4` and envelope
 publishing, PR #608 for proposer preferences, PR #610/#614 for builder registry

@@ -74,8 +74,8 @@ A Complete Visual Guide
   │   │                     ETHEREUM PROTOCOL                            │      │
   │   │                                                                  │      │
   │   │  • Bids are commitments enforced by protocol                     │      │
-  │   │  • Builder pays when payload delivered OR quorum reached          │      │
-  │   │  • PTC (Payload Timeliness Committee) verifies payload delivery  │      │
+  │   │  • Builder pays when FULL parent built OR quorum reached          │      │
+  │   │  • PTC votes on payload timeliness and blob data availability    │      │
   │   │  • No trusted third party needed!                                │      │
   │   └──────────────────────────────────────────────────────────────────┘      │
   │                                    │                                        │
@@ -120,6 +120,8 @@ A Complete Visual Guide
   │    ║  execution_requests ❌        ║            │    ║                     ║│
   │    ╚══════════════════════════════╝             │    ║ payload_attestations║│
   │                                                 │    ║ ✅ NEW              ║│
+  │                                                 │    ║ parent_execution_  ║│
+  │                                                 │    ║ requests ✅ NEW    ║│
   │  }                                              │    ╚═════════════════════╝│
   │                                                 │  }                        │
   └─────────────────────────────────────────────────┴───────────────────────────┘
@@ -136,6 +138,7 @@ A Complete Visual Guide
   SPEC: beacon-chain.md → BeaconBlockBody container
         New fields: signed_execution_payload_bid: SignedExecutionPayloadBid
                     payload_attestations: List[PayloadAttestation, MAX_PAYLOAD_ATTESTATIONS]
+                    parent_execution_requests: ExecutionRequests
 
   2.2 Block Structure: One Block Becomes Two Objects
 
@@ -173,7 +176,8 @@ A Complete Visual Guide
       │  │  │ ║ PayloadBid      ║ │  │  │ref  │  │  execution_requests       │  │
       │  │  │ ║ (commitment)    ║ │  │  │     │  │                            │  │
       │  │  │ ╚═════════════════╝ │  │  │     │  │  beacon_block_root ◄──────┼──┤
-      │  │  │ payload_attestations│  │  │     │  │  state_root               │  │
+      │  │  │ payload_attestations│  │  │     │  │  parent_beacon_block_root │  │
+      │  │  │ parent_execution_req│  │  │     │  │                            │  │
       │  │  └─────────────────────┘  │  │     │  └───────────────────────────┘  │
       │  └───────────────────────────┘  │     └─────────────────────────────────┘
       └─────────────────────────────────┘
@@ -181,6 +185,7 @@ A Complete Visual Guide
              (at slot start)                       (after block seen)
 
   Reasoning: This separation allows the builder to see the beacon block before revealing their payload, creating a commit-reveal scheme that's enforced by the protocol.
+  Execution requests from the revealed payload are processed by the child block through parent_execution_requests.
 
   ---
   2.3 BeaconState Changes
@@ -219,6 +224,9 @@ A Complete Visual Guide
   │                                                                             │
   │  ✅ payload_expected_withdrawals: List[Withdrawal, MAX_WITHDRAWALS_PER_PAYLOAD]│
   │     └─► Pre-computed withdrawals the payload must honor                     │
+  │                                                                             │
+  │  ✅ ptc_window: Vector[Vector[ValidatorIndex, PTC_SIZE], ...]               │
+  │     └─► Cached PTC assignments for previous/current/lookahead epochs        │
   │                                                                             │
   │  SPEC: beacon-chain.md → BeaconState container                              │
   │  LIMIT: BUILDER_PENDING_WITHDRAWALS_LIMIT = 1,048,576                       │
@@ -264,10 +272,12 @@ A Complete Visual Guide
   │  AGGREGATE_DUE_BPS_GLOAS     = 5000 (50% = 6s)                              │
   │  SYNC_MESSAGE_DUE_BPS_GLOAS  = 2500 (25% = 3s)                              │
   │  CONTRIBUTION_DUE_BPS_GLOAS  = 5000 (50% = 6s)                              │
+  │  PAYLOAD_DUE_BPS             = 7500 (75% = 9s)  ← NEW! Payload due          │
   │  PAYLOAD_ATTESTATION_DUE_BPS = 7500 (75% = 9s)  ← NEW! For PTC              │
   │                                                                             │
   │  FUNCTIONS (fork-choice.md): get_attestation_due_ms(epoch)                  │
   │                              get_payload_attestation_due_ms(epoch)          │
+  │                              get_payload_due_ms(epoch)                      │
   │                                                                             │
   │  WHY EARLIER ATTESTATION DEADLINE?                                          │
   │  ─────────────────────────────────                                          │
@@ -293,6 +303,8 @@ A Complete Visual Guide
           │              │ with:       │              │                   │
           │              │ • block_hash│              │                   │
           │              │ • value     │              │                   │
+          │              │ • requests_ │              │                   │
+          │              │   root      │              │                   │
           │              │ • signature │              │                   │
           │              └──────┬──────┘              │                   │
           │                     │                     │                   │
@@ -312,6 +324,8 @@ A Complete Visual Guide
    │ • payload_   │             │                     │                   │
    │   attestations│            │                     │                   │
    │   (from N-1) │             │                     │                   │
+   │ • parent_exec│             │                     │                   │
+   │   requests   │             │                     │                   │
    └──────┬───────┘             │                     │                   │
           │                     │                     │                   │
           │ BROADCASTS ─────────┼─────────────────────┼───────────────────►
@@ -417,12 +431,12 @@ A Complete Visual Guide
   │  │ eff_bal: 64 ETH │                                                        │
   │  └─────────────────┘                                                        │
   │                                                                             │
-  │  PAYLOAD PROCESSED: Immediate Queue                                         │
+  │  PARENT PAYLOAD PROCESSED: Immediate Queue                                  │
   │  ════════════════════════════════                                           │
   │                                                                             │
-  │  When process_execution_payload runs (builder revealed payload):            │
+  │  When a child block runs process_parent_execution_payload on FULL parent:   │
   │  → Payment is IMMEDIATELY moved to builder_pending_withdrawals              │
-  │  → No quorum check needed - payload delivery proves the block was seen      │
+  │  → No quorum check needed - the child built on the revealed parent payload  │
   │                                                                             │
   │  EPOCH BOUNDARY: Quorum Check (backup for withheld payloads)                │
   │  ═════════════════════════════════════════════════════════                  │
@@ -497,6 +511,9 @@ A Complete Visual Guide
   │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
   │  │    │ blob_kzg_commitments│ List[KZGCommitment] - Blob KZG       │  │   │
   │  │    │                     │ commitments (moved here from envelope)│  │   │
+  │  │    ├─────────────────────┼──────────────────────────────────────┤  │   │
+  │  │    │ execution_requests_ │ Root - commitment to execution        │  │   │
+  │  │    │ root                │ requests in the envelope              │  │   │
   │  │    └─────────────────────┴──────────────────────────────────────┘  │   │
   │  │  }                                                                  │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -507,8 +524,9 @@ A Complete Visual Guide
   │  2. A specific value (payment amount is locked in)                          │
   │  3. A specific parent (prevents bid reuse on different forks)               │
   │  4. Blob KZG commitments (ensures DA is also committed)                     │
+  │  5. Execution requests root (processed later by the child block)            │
   │                                                                             │
-  │  Builder payment queued when payload delivered, or via quorum if withheld   │
+  │  Pending payment is queued with the bid; FULL parent or quorum settles it   │
   │                                                                             │
   │  SPEC: beacon-chain.md → ExecutionPayloadBid container                      │
   │        SignedExecutionPayloadBid wraps with BLS signature                   │
@@ -560,9 +578,7 @@ A Complete Visual Guide
   │  │                                                                     │   │
   │  │    beacon_block_root: Root         ◄── Links to the beacon block    │   │
   │  │                                                                     │   │
-  │  │    slot: Slot                      ◄── Must match block slot        │   │
-  │  │                                                                     │   │
-  │  │    state_root: Root                ◄── Post-state after processing  │   │
+  │  │    parent_beacon_block_root: Root  ◄── Must match block.parent_root │   │
   │  │                                                                     │   │
   │  │  }                                                                  │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -575,15 +591,16 @@ A Complete Visual Guide
   │  │ Contains │──────────────►│ block_hash   │◄─────────│ payload.     │      │
   │  │ bid      │               │              │  MUST    │ block_hash   │      │
   │  └──────────┘               │ builder_idx  │◄─MATCH──►│ builder_idx  │      │
+  │                             │ requests_root│◄─MATCH──►│ exec_requests│      │
   │                             │ blob_comms   │ (commitments now in bid) │      │
   │                             └──────────────┘          └──────────────┘      │
   │                                                                             │
   │  SPEC: beacon-chain.md → ExecutionPayloadEnvelope container                 │
   │        SignedExecutionPayloadEnvelope wraps with BLS signature              │
   │  FUNCTIONS: verify_execution_payload_envelope_signature()                   │
-  │             process_execution_payload()                                     │
+  │             verify_execution_payload_envelope()                             │
   │  GOSSIP: execution_payload topic (p2p-interface.md)                         │
-  │  HANDLER: on_execution_payload() (fork-choice.md)                           │
+  │  HANDLER: on_execution_payload_envelope() (fork-choice.md)                  │
   │  BEACON API:                                                                │
   │    GET  /eth/v1/validator/execution_payload_envelope/{slot}/{builder_index} │
   │         → Builder retrieves their execution payload envelope to sign        │
@@ -725,8 +742,8 @@ A Complete Visual Guide
   │                                                                             │
   │  ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐   │
   │  │ Bid included in  │     │ Payload revealed │     │ Withdrawal       │   │
-  │  │ block            │ ──► │ (process_exec_   │ ──► │ sweep processes  │   │
-  │  │                  │     │  payload) OR     │     │                  │   │
+  │  │ block            │ ──► │ (child processes │ ──► │ sweep processes  │   │
+  │  │                  │     │  FULL parent) OR │     │                  │   │
   │  │ builder_pending_ │     │ Quorum reached   │     │ Converted to     │   │
   │  │ payments[slot]   │     │ at epoch boundary│     │ actual Withdrawal│   │
   │  │ created          │     │ (if no payload)  │     │ in execution     │   │
@@ -809,13 +826,13 @@ A Complete Visual Guide
   │                                                                             │
   │  ┌───────────────────┬────────────────────────────────────────────────┐    │
   │  │ PAYLOAD_STATUS_   │ Block just arrived, waiting for payload        │    │
-  │  │ PENDING (0)       │ Fork choice doesn't know yet if it's full/empty│    │
+  │  │ PENDING (2)       │ Fork choice doesn't know yet if it's full/empty│    │
   │  ├───────────────────┼────────────────────────────────────────────────┤    │
   │  │ PAYLOAD_STATUS_   │ Payload was NOT delivered (or not valid)       │    │
-  │  │ EMPTY (1)         │ Block is "empty" - no execution happened       │    │
+  │  │ EMPTY (0)         │ Block is "empty" - no execution happened       │    │
   │  ├───────────────────┼────────────────────────────────────────────────┤    │
   │  │ PAYLOAD_STATUS_   │ Payload WAS delivered and validated            │    │
-  │  │ FULL (2)          │ Block is "full" - execution completed          │    │
+  │  │ FULL (1)          │ Block is "full" - execution completed          │    │
   │  └───────────────────┴────────────────────────────────────────────────┘    │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
@@ -871,14 +888,14 @@ A Complete Visual Guide
   │                                                                             │
   │  class ForkChoiceNode(Container):                                           │
   │      root: Root              # The beacon block root                        │
-  │      payload_status: uint8   # PENDING=0, EMPTY=1, FULL=2                   │
+  │      payload_status: uint8   # EMPTY=0, FULL=1, PENDING=2                   │
   │                                                                             │
   │  A single beacon block root can have MULTIPLE nodes in fork choice!         │
   │  One for each payload status (but PENDING is transitional).                 │
   │                                                                             │
   │  SPEC: fork-choice.md                                                       │
-  │  CONSTANTS: PAYLOAD_STATUS_PENDING=0, PAYLOAD_STATUS_EMPTY=1,               │
-  │             PAYLOAD_STATUS_FULL=2, PAYLOAD_TIMELY_THRESHOLD=256             │
+  │  CONSTANTS: PAYLOAD_STATUS_EMPTY=0, PAYLOAD_STATUS_FULL=1,                  │
+  │             PAYLOAD_STATUS_PENDING=2, PAYLOAD_TIMELY_THRESHOLD=256          │
   │  CONTAINERS: ForkChoiceNode, LatestMessage (modified), Store (modified)     │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
@@ -938,7 +955,7 @@ A Complete Visual Guide
   │  When deciding between EMPTY and FULL for previous slot's block:            │
   │                                                                             │
   │  should_extend_payload(root) returns True if:                               │
-  │    - PTC voted payload present (>256) and payload locally available, OR     │
+  │    - payload locally verified AND PTC supports timeliness + blob DA, OR     │
   │    - No proposer boost yet, OR                                              │
   │    - Proposer boost is for different parent, OR                             │
   │    - Proposer boost block builds on FULL version                            │
@@ -1005,7 +1022,7 @@ A Complete Visual Guide
   │  class LatestMessage:                                                       │
   │      slot: Slot              # Changed from epoch!                          │
   │      root: Root                                                             │
-  │      payload_present: bool   # NEW! From attestation.data.index             │
+  │      payload_present: bool   # NEW! Derived from attestation index          │
   │                                                                             │
   │  WHY slot instead of epoch?                                                 │
   │  More granular tracking needed because payload status can vary per slot.    │
@@ -1032,32 +1049,31 @@ A Complete Visual Guide
   │  │  def on_block(store, signed_block):                                 │   │
   │  │      block = signed_block.message                                   │   │
   │  │                                                                     │   │
-  │  │      # NEW: Determine which parent state to use                     │   │
+  │  │      # If block builds on FULL parent, parent payload must be known │   │
   │  │      if is_parent_node_full(store, block):                          │   │
-  │  │          # Parent had payload → use post-payload state              │   │
-  │  │          state = store.execution_payload_states[parent_root]        │   │
-  │  │      else:                                                          │   │
-  │  │          # Parent was empty → use post-block state                  │   │
-  │  │          state = store.block_states[parent_root]                    │   │
+  │  │          assert is_payload_verified(store, block.parent_root)       │   │
   │  │                                                                     │   │
-  │  │      # Process block...                                             │   │
+  │  │      state = copy(store.block_states[block.parent_root])            │   │
+  │  │      state_transition(state, signed_block, validate_result=True)    │   │
+  │  │                                                                     │   │
   │  │      store.blocks[root] = block                                     │   │
   │  │      store.block_states[root] = state   # Post-block state          │   │
   │  │                                                                     │   │
   │  │      # NEW: Initialize PTC vote tracking                            │   │
-  │  │      store.ptc_vote[root] = [False] * 512                           │   │
+  │  │      store.payload_timeliness_vote[root] = [None] * 512             │   │
+  │  │      store.payload_data_availability_vote[root] = [None] * 512      │   │
   │  │                                                                     │   │
   │  │      # NEW: Process payload attestations from previous slot         │   │
   │  │      notify_ptc_messages(store, state, block.body.payload_attestations)│
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
-  │  on_execution_payload (NEW)                                                 │
-  │  ══════════════════════════                                                 │
+  │  on_execution_payload_envelope (NEW)                                        │
+  │  ═══════════════════════════════════                                        │
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
-  │  │  def on_execution_payload(store, signed_envelope):                  │   │
+  │  │  def on_execution_payload_envelope(store, signed_envelope):         │   │
   │  │      envelope = signed_envelope.message                             │   │
   │  │                                                                     │   │
   │  │      # Beacon block must be known                                   │   │
@@ -1066,14 +1082,14 @@ A Complete Visual Guide
   │  │      # Check blob data availability                                 │   │
   │  │      assert is_data_available(envelope.beacon_block_root)           │   │
   │  │                                                                     │   │
-  │  │      # Get post-block state                                         │   │
-  │  │      state = copy(store.block_states[envelope.beacon_block_root])   │   │
+  │  │      state = store.block_states[envelope.beacon_block_root]         │   │
   │  │                                                                     │   │
-  │  │      # Process the execution payload (full validation)              │   │
-  │  │      process_execution_payload(state, signed_envelope, EXECUTION_ENGINE)│
+  │  │      # Pure verification; processing is deferred to child block     │   │
+  │  │      verify_execution_payload_envelope(                             │   │
+  │  │          state, signed_envelope, ENGINE)                            │   │
   │  │                                                                     │   │
-  │  │      # Store the post-payload state                                 │   │
-  │  │      store.execution_payload_states[envelope.beacon_block_root] = state│
+  │  │      # Store verified envelope                                      │   │
+  │  │      store.payloads[envelope.beacon_block_root] = envelope          │   │
   │  │      #                                                              │   │
   │  │      # This makes the FULL version of this block available         │   │
   │  │      # in fork choice!                                              │   │
@@ -1105,33 +1121,46 @@ A Complete Visual Guide
   │  │                                                                     │   │
   │  │      # Update the PTC vote tracking                                 │   │
   │  │      ptc_index = ptc.index(msg.validator_index)                     │   │
-  │  │      store.ptc_vote[data.beacon_block_root][ptc_index] = data.payload_present│
-  │  │      #                                                              │   │
-  │  │      # True = "I saw the payload"                                   │   │
-  │  │      # False = "I did NOT see the payload"                          │   │
+  │  │      root = data.beacon_block_root                                  │   │
+  │  │      timely_votes = store.payload_timeliness_vote[root]             │   │
+  │  │      da_votes = store.payload_data_availability_vote[root]          │   │
+  │  │      timely_votes[ptc_index] = data.payload_present                 │   │
+  │  │      da_votes[ptc_index] = data.blob_data_available                 │   │
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
-  │  is_payload_timely - How PTC votes are evaluated:                           │
+  │  payload_timeliness - How PTC votes are evaluated:                          │
   │  ════════════════════════════════════════════════                           │
   │                                                                             │
-  │  def is_payload_timely(store, root):                                        │
-  │      # Payload must be locally available                                    │
-  │      if root not in store.execution_payload_states:                         │
-  │          return False                                                       │
+  │  def payload_timeliness(store, root, timely):                               │
+  │      assert root in store.payload_timeliness_vote                           │
+  │      # Local payload availability gates the PTC vote                        │
+  │      if root not in store.payloads:                                         │
+  │          return not timely                                                  │
+  │      votes = store.payload_timeliness_vote[root]                            │
+  │      return sum(vote == timely for vote in votes) > (                       │
+  │          PAYLOAD_TIMELY_THRESHOLD)                                          │
   │                                                                             │
-  │      # More than half of PTC must have voted "present"                      │
-  │      return sum(store.ptc_vote[root]) > PAYLOAD_TIMELY_THRESHOLD  # >256    │
+  │  def payload_data_availability(store, root, available):                     │
+  │      assert root in store.payload_data_availability_vote                    │
+  │      # Blob DA also depends on local verified payload availability          │
+  │      if root not in store.payloads:                                         │
+  │          return not available                                               │
+  │      votes = store.payload_data_availability_vote[root]                     │
+  │      return sum(vote == available for vote in votes) > (                    │
+  │          DATA_AVAILABILITY_TIMELY_THRESHOLD)                                │
   │                                                                             │
   │  SPEC: fork-choice.md                                                       │
   │  HANDLERS: on_block() (modified), is_data_available() (modified),           │
-  │            on_execution_payload() (new)                                     │
+  │            on_execution_payload_envelope() (new)                            │
   │            on_payload_attestation_message() (new)                           │
-  │  FUNCTIONS: is_payload_timely(), notify_ptc_messages()                      │
+  │  FUNCTIONS: payload_timeliness(), payload_data_availability(),              │
+  │             is_payload_verified(), notify_ptc_messages()                    │
   │             get_parent_payload_status(), is_parent_node_full()              │
   │             should_extend_payload(), get_payload_status_tiebreaker()        │
   │             get_attestation_score() (modified)                              │
-  │  STORE FIELDS: execution_payload_states, ptc_vote (new)                     │
+  │  STORE FIELDS: payloads, payload_timeliness_vote,                           │
+  │                payload_data_availability_vote (new)                         │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -1173,6 +1202,9 @@ A Complete Visual Guide
   │  │ execution_payload_bid ✨ NEW      │ SignedExecutionPayloadBid       │   │
   │  │                                   │ (builder bids)                  │   │
   │  ├───────────────────────────────────┼─────────────────────────────────┤   │
+  │  │ proposer_preferences ✨ NEW       │ SignedProposerPreferences       │   │
+  │  │                                   │ (proposer fee/gas preferences)  │   │
+  │  ├───────────────────────────────────┼─────────────────────────────────┤   │
   │  │ payload_attestation_message ✨ NEW│ PayloadAttestationMessage       │   │
   │  │                                   │ (PTC votes)                     │   │
   │  ├───────────────────────────────────┼─────────────────────────────────┤   │
@@ -1190,6 +1222,8 @@ A Complete Visual Guide
   │               execution_payload)                                            │
   │                                                                             │
   │                          AFTER                                              │
+  │                                                                             │
+  │    Proposer ───proposer_preferences──► Network ───► Builders                │
   │                                                                             │
   │    Builder ───execution_payload_bid───► Network ───► Proposer               │
   │                (commitment)                              │                  │
@@ -1222,7 +1256,7 @@ A Complete Visual Guide
   │  │   • builder_index is not valid/active (is_active_builder fails)     │   │
   │  │   • execution_payment is non-zero (reserved for trusted auctions)  │   │
   │  │   • fee_recipient doesn't match proposer's preferences              │   │
-  │  │   • gas_limit doesn't match proposer's preferences                  │   │
+  │  │   • gas_limit is not compatible with proposer target_gas_limit      │   │
   │  │   • signature is invalid                                           │   │
   │  │                                                                     │   │
   │  │ IGNORE if:                                                          │   │
@@ -1241,9 +1275,10 @@ A Complete Visual Guide
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │ REJECT if:                                                          │   │
   │  │   • Referenced block doesn't pass validation                        │   │
-  │  │   • slot doesn't match block.slot                                   │   │
+  │  │   • payload.slot_number doesn't match block.slot                    │   │
   │  │   • builder_index doesn't match bid.builder_index                   │   │
   │  │   • payload.block_hash doesn't match bid.block_hash                 │   │
+  │  │   • hash_tree_root(execution_requests) != bid.execution_requests_root│  │
   │  │   • signature is invalid                                            │   │
   │  │                                                                     │   │
   │  │ IGNORE if:                                                          │   │
@@ -1265,6 +1300,20 @@ A Complete Visual Guide
   │  │   • slot is not current slot (with clock disparity allowance)      │   │
   │  │   • Already seen valid message from this validator                 │   │
   │  │   • beacon_block_root not yet seen                                 │   │
+  │  └─────────────────────────────────────────────────────────────────────┘   │
+  │                                                                             │
+  │  proposer_preferences                                                       │
+  │  ════════════════════                                                       │
+  │                                                                             │
+  │  ┌─────────────────────────────────────────────────────────────────────┐   │
+  │  │ REJECT if:                                                          │   │
+  │  │   • validator is not proposer for preferences.proposal_slot         │   │
+  │  │   • signature is invalid                                            │   │
+  │  │                                                                     │   │
+  │  │ IGNORE if:                                                          │   │
+  │  │   • proposal_slot outside proposer lookahead or already passed      │   │
+  │  │   • dependent_root not yet seen                                     │   │
+  │  │   • already seen valid preferences for same proposer slot/root      │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
@@ -1389,8 +1438,9 @@ A Complete Visual Guide
   │                                                                             │
   │  SPEC: p2p-interface.md                                                     │
   │  CONSTANTS: MAX_REQUEST_PAYLOADS = 128                                      │
-  │  GOSSIP: beacon_block, execution_payload_bid, execution_payload,            │
-  │          payload_attestation_message, data_column_sidecar_{subnet_id}       │
+  │  GOSSIP: beacon_block, proposer_preferences, execution_payload_bid,         │
+  │          execution_payload, payload_attestation_message,                    │
+  │          data_column_sidecar_{subnet_id}                                    │
   │  REQ/RESP: ExecutionPayloadEnvelopesByRange v1 (new)                        │
   │            ExecutionPayloadEnvelopesByRoot v1 (new)                         │
   │            BeaconBlocksByRange v2, BeaconBlocksByRoot v2 (updated)          │
@@ -1463,11 +1513,11 @@ A Complete Visual Guide
   │  │ )                                                                   │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
-  │  STEP 3: You're Active Immediately!                                         │
-  │  ══════════════════════════════════                                         │
+  │  STEP 3: Become Active After Deposit Epoch Finalizes                        │
+  │  ════════════════════════════════════════════════════                       │
   │                                                                             │
   │  Unlike validators, builders don't need MIN_ACTIVATION_BALANCE.             │
-  │  Once deposited, you're an active builder and can:                          │
+  │  A builder is active once their deposit_epoch is finalized. Then they can:  │
   │  • Submit bids to proposers                                                 │
   │  • Have bids included in blocks (if sufficient balance)                     │
   │  • Reveal payloads and earn MEV                                             │
@@ -1481,7 +1531,7 @@ A Complete Visual Guide
   │  │  • BuilderIndex type              • ValidatorIndex type             │   │
   │  │  • No validation duties           • Must attest, propose, etc.      │   │
   │  │  • MIN_DEPOSIT_AMOUNT (1 ETH)     • Need 32 ETH to activate         │   │
-  │  │  • ~6.8 hour exit delay           • ~27 hour exit delay             │   │
+  │  │  • 8192 epoch exit delay          • Validator withdrawability delay │   │
   │  │  • CAN submit execution bids      • CAN self-build (special index)  │   │
   │  │  • CAN pay proposers              • N/A                             │   │
   │  │                                                                     │   │
@@ -1494,11 +1544,11 @@ A Complete Visual Guide
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
   │  │  1. Initiate exit via voluntary exit message                        │   │
-  │  │  2. Wait MIN_BUILDER_WITHDRAWABILITY_DELAY (64 epochs ≈ 6.8 hours)  │   │
+  │  │  2. Wait MIN_BUILDER_WITHDRAWABILITY_DELAY (8192 epochs)            │   │
   │  │  3. Balance withdrawn to execution_address                          │   │
   │  │                                                                     │   │
-  │  │  Why 64 epochs? Balances cost of locking ETH vs preventing sweep   │   │
-  │  │  stalling attacks from repeated builder deposit/exit cycles.        │   │
+  │  │  Delay prevents sweep-stalling from repeated builder deposit/exit   │   │
+  │  │  cycles and leaves margin for payment settlement.                   │   │
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
@@ -1513,25 +1563,26 @@ A Complete Visual Guide
   │  PHASE 0: Get Proposer Preferences (NEW!)                                   │
   │  ═══════════════════════════════════════                                    │
   │                                                                             │
-  │  Before building, you MUST know the proposer's preferences!                 │
+  │  For trustless gossip bids, know the proposer's preferences first!         │
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
   │  │  Listen to "proposer_preferences" gossip topic...                   │   │
   │  │                                                                     │   │
-  │  │  Proposers broadcast SignedProposerPreferences at epoch start:      │   │
+  │  │  Proposers may broadcast preferences for lookahead slots:          │   │
   │  │                                                                     │   │
   │  │  ProposerPreferences {                                              │   │
+  │  │      dependent_root: Root,          # Lookahead-dependent root       │   │
   │  │      proposal_slot: Slot,           # Which slot they're proposing  │   │
   │  │      validator_index: ValidatorIndex,                               │   │
   │  │      fee_recipient: ExecutionAddress, # Where they want payment     │   │
-  │  │      gas_limit: uint64,               # Their preferred gas limit   │   │
+  │  │      target_gas_limit: uint64,        # Their preferred gas limit   │   │
   │  │  }                                                                  │   │
   │  │                                                                     │   │
-  │  │  IMPORTANT: Your bid MUST match these preferences exactly!          │   │
-  │  │  Bids with wrong fee_recipient or gas_limit are REJECTED.           │   │
+  │  │  IMPORTANT: fee_recipient must match, and gas_limit must be         │   │
+  │  │  target-compatible with the proposer's target_gas_limit.            │   │
   │  │                                                                     │   │
-  │  │  If no preferences received → proposer won't accept trustless bids  │   │
+  │  │  If no preferences received → no trustless bid for that slot        │   │
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
@@ -1540,12 +1591,13 @@ A Complete Visual Guide
   │                                                                             │
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
-  │  │  1. Call execution engine: engine_getPayloadV5                      │   │
-  │  │     Use proposer's gas_limit from preferences!                      │   │
+  │  │  1. Call execution engine: engine_getPayloadV6                      │   │
+  │  │     Use proposer's target_gas_limit from preferences!               │   │
   │  │                                                                     │   │
   │  │  2. Receive:                                                        │   │
   │  │     • execution_payload (transactions, withdrawals, etc.)           │   │
   │  │     • blobs_bundle (blobs, commitments, proofs)                     │   │
+  │  │     • execution_requests                                            │   │
   │  │     • block_value (MEV extracted)                                   │   │
   │  │                                                                     │   │
   │  │  3. Store this payload - you'll need it later!                      │   │
@@ -1558,17 +1610,18 @@ A Complete Visual Guide
   │  ┌─────────────────────────────────────────────────────────────────────┐   │
   │  │                                                                     │   │
   │  │  bid = ExecutionPayloadBid(                                         │   │
-  │  │      parent_block_hash = state.latest_block_hash,                   │   │
+  │  │      parent_block_hash = payload.parent_hash,                       │   │
   │  │      parent_block_root = hash_tree_root(state.latest_block_header), │   │
   │  │      block_hash = payload.block_hash,          # COMMITMENT!        │   │
   │  │      prev_randao = payload.prev_randao,                             │   │
   │  │      fee_recipient = preferences.fee_recipient, # From preferences! │   │
-  │  │      gas_limit = preferences.gas_limit,         # From preferences! │   │
+  │  │      gas_limit = payload.gas_limit,             # Target-compatible │   │
   │  │      builder_index = my_builder_index,          # BuilderIndex type │   │
   │  │      slot = target_slot,                       # Current or next    │   │
   │  │      value = payment_amount,                   # What I'll pay      │   │
   │  │      execution_payment = 0,                    # Must be 0 for gossip│   │
   │  │      blob_kzg_commitments = blobs.commitments, │   │
+  │  │      execution_requests_root = hash_tree_root(execution_requests),  │   │
   │  │  )                                                                  │   │
   │  │                                                                     │   │
   │  │  signed_bid = SignedExecutionPayloadBid(                            │   │
@@ -1592,7 +1645,7 @@ A Complete Visual Guide
   │  │                                                                     │   │
   │  │    if included_bid.builder_index == my_builder_index:               │   │
   │  │        # MY BID WAS SELECTED!                                       │   │
-  │  │        # Reveal payload; payment queued immediately on delivery      │   │
+  │  │        # Reveal payload; child block settles payment if FULL parent  │   │
   │  │        proceed to Phase 4                                           │   │
   │  │    else:                                                            │   │
   │  │        # Different builder won, I keep my payload                   │   │
@@ -1610,8 +1663,7 @@ A Complete Visual Guide
   │  │      execution_requests = stored_requests,                          │   │
   │  │      builder_index = my_builder_index,   # BuilderIndex type        │   │
   │  │      beacon_block_root = hash_tree_root(received_block),            │   │
-  │  │      slot = received_block.slot,                                    │   │
-  │  │      state_root = compute_post_state_root(...)  # After processing │   │
+  │  │      parent_beacon_block_root = received_block.parent_root,         │   │
   │  │  )                                                                  │   │
   │  │                                                                     │   │
   │  │  signed_envelope = SignedExecutionPayloadEnvelope(                  │   │
@@ -1692,7 +1744,7 @@ A Complete Visual Guide
   │  │     └─ NO: Don't submit attestation (ignored anyway)                │   │
   │  │     └─ YES: Continue...                                             │   │
   │  │                                                                     │   │
-  │  │  2. Check: Did I see an ExecutionPayloadEnvelope for this block?    │   │
+  │  │  2. Check: Did I see its envelope before get_payload_due_ms()?      │   │
   │  │     └─ NO: Set payload_present = false                              │   │
   │  │     └─ YES: Set payload_present = true                              │   │
   │  │                                                                     │   │
@@ -1748,25 +1800,31 @@ A Complete Visual Guide
   │  │                                                                     │   │
   │  │  1. Listen to "execution_payload_bid" topic (or out-of-band)        │   │
   │  │                                                                     │   │
-  │  │  2. Select a bid (highest value? most trusted builder?)             │   │
+  │  │  2. Select a head and call should_build_on_full(store, head)        │   │
   │  │                                                                     │   │
-  │  │  3. Verify bid is valid:                                            │   │
+  │  │  3. Select a bid (highest value? most trusted builder?)             │   │
+  │  │                                                                     │   │
+  │  │  4. Verify bid is valid:                                            │   │
   │  │     • Builder is active and not slashed                             │   │
   │  │     • Builder has 0x03 credentials (unless self-build)              │   │
   │  │     • Builder has sufficient balance                                │   │
   │  │     • Bid slot matches current slot                                 │   │
-  │  │     • Bid parent matches my parent                                  │   │
+  │  │     • Bid parent root matches my parent_root                        │   │
+  │  │     • Bid parent hash matches FULL/EMPTY parent choice              │   │
   │  │     • Signature valid (unless self-build with infinity sig)         │   │
   │  │                                                                     │   │
-  │  │  4. Include bid in block:                                           │   │
+  │  │  5. Include bid in block:                                           │   │
   │  │     block.body.signed_execution_payload_bid = selected_bid          │   │
   │  │                                                                     │   │
-  │  │  5. Include payload attestations from previous slot:                │   │
+  │  │  6. Include payload attestations from previous slot:                │   │
   │  │     block.body.payload_attestations = aggregate(ptc_messages)       │   │
   │  │                                                                     │   │
-  │  │  6. NO LONGER include execution_payload in block!                   │   │
+  │  │  7. Set parent_execution_requests from store.payloads if FULL,      │   │
+  │  │     otherwise use empty ExecutionRequests()                         │   │
   │  │                                                                     │   │
-  │  │  7. NO LONGER responsible for DataColumnSidecar distribution        │   │
+  │  │  8. NO LONGER include execution_payload in block!                   │   │
+  │  │                                                                     │   │
+  │  │  9. NO LONGER responsible for DataColumnSidecar distribution        │   │
   │  │     (builder does this now)                                         │   │
   │  │                                                                     │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -1829,6 +1887,11 @@ A Complete Visual Guide
   │  ══════════════════════                                                     │
   │                                                                             │
   │      ┌──────────┐                                                           │
+  │      │ PROPOSER │ Broadcasts SignedProposerPreferences                      │
+  │      └────┬─────┘                                                           │
+  │           │                                                                 │
+  │           ▼                                                                 │
+  │      ┌──────────┐                                                           │
   │      │ BUILDER  │ Constructs payload, creates bid                           │
   │      └────┬─────┘                                                           │
   │           │                                                                 │
@@ -1848,6 +1911,7 @@ A Complete Visual Guide
   │           │ Creates BeaconBlock containing:                                 │
   │           │ • Selected bid (signed_execution_payload_bid)                   │
   │           │ • Payload attestations from slot N-1                            │
+  │           │ • Parent execution requests if building on FULL parent          │
   │           │                                                                 │
   │           │ SignedBeaconBlock                                               │
   │           ▼                                                                 │
@@ -1879,7 +1943,8 @@ A Complete Visual Guide
   │      ┌─────────┐        ┌──────────┐        ┌───────────┐                   │
   │      │   PTC   │        │VALIDATORS│        │   NODES   │                   │
   │      │(waiting │        │(waiting  │        │ (process  │                   │
-  │      │ to vote)│        │ to vote) │        │ payload)  │                   │
+  │      │ to vote)│        │ to vote) │        │ verify +  │                   │
+  │      │         │        │          │        │ store env)│                   │
   │      └─────────┘        └──────────┘        └───────────┘                   │
   │                                                                             │
   │  SLOT N: 25% (3 seconds) - ATTESTATION DEADLINE                             │
@@ -1923,8 +1988,9 @@ A Complete Visual Guide
   │                                                                             │
   │      Next block contains:                                                   │
   │      • payload_attestations (aggregated from slot N)                        │
+  │      • parent_execution_requests from slot N payload if building on FULL    │
   │      • New signed_execution_payload_bid for slot N+1                        │
-  │      • State reflects whether slot N had FULL or EMPTY block                │
+  │      • State processes slot N payload only when parent chosen as FULL       │
   │                                                                             │
   │  EPOCH BOUNDARY - PAYMENT PROCESSING                                        │
   │  ═══════════════════════════════════                                        │
@@ -1978,20 +2044,21 @@ A Complete Visual Guide
   │  ════════════════════════                                                   │
   │  • Proposers: Select best bid, create beacon block                          │
   │  • Builders: Construct payloads, reveal after block                         │
-  │  • PTC: Verify payload delivery timeliness                                  │
+  │  • PTC: Vote on payload timeliness and blob data availability               │
   │  • All enforced at protocol level!                                          │
   │                                                                             │
-  │  2. UNCONDITIONAL PAYMENT                                                   │
-  │  ════════════════════════                                                   │
+  │  2. BID PAYMENT SETTLEMENT                                                  │
+  │  ═════════════════════════                                                  │
   │  • Builder commits to payment via bid                                       │
-  │  • If payload delivered: payment queued immediately                         │
-  │  • If payload withheld: payment still happens if quorum reached             │
+  │  • If child builds on FULL parent: payment settles immediately              │
+  │  • If payload withheld/ignored: payment still happens if quorum reached     │
   │  • Prevents griefing attacks on proposers                                   │
   │                                                                             │
   │  3. TWO-PHASE STATE TRANSITION                                              │
   │  ═════════════════════════════                                              │
   │  • Phase 1: Process beacon block (bid committed)                            │
-  │  • Phase 2: Process execution payload (if revealed)                         │
+  │  • Envelope arrival: verify + store payload for fork choice                 │
+  │  • Child block: process parent payload via parent_execution_requests        │
   │  • Fork choice tracks EMPTY vs FULL versions                                │
   │                                                                             │
   │  4. NEW STAKED ACTOR TYPE: BUILDER                                          │
@@ -2006,7 +2073,8 @@ A Complete Visual Guide
   │  • 512 validators per slot                                                  │
   │  • Balance-weighted selection (sybil resistant)                             │
   │  • Vote at 75% of slot                                                      │
-  │  • Votes on payload timeliness (separate from payment quorum)               │
+  │  • Votes on payload timeliness and blob data availability                   │
+  │  • Separate from same-slot attestation payment quorum                       │
   │                                                                             │
   │  6. MODIFIED ATTESTATIONS                                                   │
   │  ═════════════════════════                                                  │
@@ -2046,8 +2114,8 @@ A Complete Visual Guide
   │  │ fork-choice.md    │ • PayloadStatus (PENDING/EMPTY/FULL)             │   │
   │  │                   │ • ForkChoiceNode with payload tracking           │   │
   │  │                   │ • Modified get_head() algorithm                  │   │
-  │  │                   │ • on_execution_payload handler                   │   │
-  │  │                   │ • PTC vote tracking (is_payload_timely)          │   │
+  │  │                   │ • on_execution_payload_envelope handler          │   │
+  │  │                   │ • PTC timeliness + data availability votes       │   │
   │  │                   │ • Attestation index interpretation               │   │
   │  ├───────────────────┼──────────────────────────────────────────────────┤   │
   │  │ p2p-interface.md  │ • New gossip topics (bid, payload, PTC)          │   │
@@ -2140,7 +2208,7 @@ Detailed reference for constants, containers, and functions defined in the GLOAS
 
 **What:** Signing domain for proposer preference messages.
 
-**Why it exists:** Before builders can construct valid bids, they need to know the proposer's `fee_recipient` (where to send payment) and `gas_limit` preferences. Proposers broadcast signed preferences so builders know what values to use. The separate domain ensures these preference messages can't be confused with other signed messages.
+**Why it exists:** Before builders can construct valid bids, they need to know the proposer's `fee_recipient` (where to send payment) and `target_gas_limit` preferences. Proposers may broadcast signed preferences for lookahead proposal slots so builders know what values to use. The separate domain ensures these preference messages can't be confused with other signed messages.
 
 ---
 
@@ -2195,7 +2263,7 @@ The value is chosen to balance security margins with practical constraints on bl
 
 **What:** Maximum aggregated payload attestations per block.
 
-**Why it exists:** PTC members might vote with different `PayloadAttestationData` (e.g., some saw payload, some didn't; some saw blobs, some didn't). Each unique data combination needs a separate aggregate. With 2 boolean fields (`payload_present`, `blob_data_available`), there are at most 3 valid combinations (one is impossible: blobs without payload). `MAX_PAYLOAD_ATTESTATIONS = 4` provides headroom for all cases plus margin.
+**Why it exists:** PTC members might vote with different `PayloadAttestationData` (e.g., some saw payload before the due time, some didn't; some had blob data available, some didn't). Each unique data combination needs a separate aggregate. With 2 boolean fields (`payload_present`, `blob_data_available`), there are 4 possible combinations, and `MAX_PAYLOAD_ATTESTATIONS = 4` covers them.
 
 **`BUILDER_REGISTRY_LIMIT`** = `2**40` (≈ 1 trillion)
 
@@ -2222,15 +2290,15 @@ The value is chosen to balance security margins with practical constraints on bl
 
 #### Configuration Constants
 
-**`MIN_BUILDER_WITHDRAWABILITY_DELAY`** = `64` epochs (≈ 6.8 hours)
+**`MIN_BUILDER_WITHDRAWABILITY_DELAY`** = `8192` epochs (≈ 36.4 days with 12s slots)
 
 **What:** Minimum wait time before a builder can withdraw after initiating exit.
 
-**Why it exists:** This delay prevents a sweep-stalling attack where an attacker repeatedly deposits and exits builders to block validator withdrawals. The 64-epoch value balances:
+**Why it exists:** This delay prevents a sweep-stalling attack where an attacker repeatedly deposits and exits builders to block validator withdrawals. The current spec value gives a long exit buffer:
 
-1. **Attack cost:** An attacker would need ~32,768 ETH locked to sustain stalling the validator sweep (at 1 ETH per builder), costing ~$18,853/day in opportunity cost at 7% APY.
-2. **Usability:** Builders can exit relatively quickly compared to the previous ~18-day delay.
-3. **Payment settlement:** Builder payments settle within 2 epochs, so 64 epochs provides ample margin.
+1. **Attack cost:** Repeated builder deposit/exit cycles keep capital locked for many epochs.
+2. **Withdrawal safety:** Exiting builders remain around long enough for pending obligations to settle.
+3. **Payment settlement:** Builder payments settle through the pending-payment and withdrawal queues before full builder withdrawal.
 
 ---
 
@@ -2244,7 +2312,7 @@ The value is chosen to balance security margins with practical constraints on bl
 - A minority of slow/offline PTC members from incorrectly marking a timely payload as late
 - An attacker from claiming timeliness by bribing only a minority
 
-**`PAYLOAD_STATUS_PENDING`** = `0`, **`PAYLOAD_STATUS_EMPTY`** = `1`, **`PAYLOAD_STATUS_FULL`** = `2`
+**`PAYLOAD_STATUS_EMPTY`** = `0`, **`PAYLOAD_STATUS_FULL`** = `1`, **`PAYLOAD_STATUS_PENDING`** = `2`
 
 **What:** The three possible states of a block's payload in fork choice.
 
@@ -2298,11 +2366,11 @@ Moving attestations earlier frees up time later in the slot for these new activi
 
 **Why it exists:** Each Ethereum fork has a unique version for domain separation. Signatures made under one fork version are invalid under another, preventing cross-fork replay attacks. `0x07` follows the sequence: Phase0 (`0x00`), Altair (`0x01`), Bellatrix (`0x02`), Capella (`0x03`), Deneb (`0x04`), Electra (`0x05`), Fulu (`0x06`), GLOAS (`0x07`).
 
-**`GLOAS_FORK_EPOCH`** = TBD
+**`GLOAS_FORK_EPOCH`** = `Epoch(18446744073709551615)` placeholder / TBD activation
 
 **What:** The epoch when GLOAS activates.
 
-**Why TBD:** Fork epochs are determined through community coordination after extensive testing. Setting it to TBD allows the spec to be finalized before the activation date is chosen.
+**Why TBD:** Fork epochs are determined through community coordination after extensive testing. The current spec keeps the max-uint64 placeholder until an activation epoch is chosen.
 
 ---
 
@@ -2352,8 +2420,8 @@ Withdrawals are processed during the withdrawal sweep, interleaved with regular 
 **Why it exists:** PTC members need to communicate what they observed. This is the data they sign:
 - `beacon_block_root`: Which block they're attesting about
 - `slot`: When (prevents replay across slots)
-- `payload_present`: "Did I see the execution payload?" (true/false)
-- `blob_data_available`: "Did I see the blob data?" (true/false)
+- `payload_present`: "Did I see the execution payload before `get_payload_due_ms()`?" (true/false)
+- `blob_data_available`: "Is the blob data available for this block?" (true/false)
 
 Two boolean fields allow PTC members to report partial delivery (payload but no blobs, or neither).
 
@@ -2377,13 +2445,14 @@ Aggregation reduces block size—instead of 512 individual signatures, we get a 
 ---
 
 **`ExecutionPayloadBid`**
-- **Fields:** `parent_block_hash`, `parent_block_root`, `block_hash`, `prev_randao`, `fee_recipient`, `gas_limit`, `builder_index`, `slot`, `value`, `execution_payment`, `blob_kzg_commitments`
+- **Fields:** `parent_block_hash`, `parent_block_root`, `block_hash`, `prev_randao`, `fee_recipient`, `gas_limit`, `builder_index`, `slot`, `value`, `execution_payment`, `blob_kzg_commitments`, `execution_requests_root`
 
 **Why it exists:** This is the core of ePBS—the builder's cryptographic commitment. Key fields:
 - `block_hash`: Commits to the EXACT payload the builder will reveal (can't change later)
 - `value`: How much the builder will pay the proposer (from their staked balance)
 - `blob_kzg_commitments`: The actual blob KZG commitments (moved here from the envelope, so they're committed at bid time)
-- `fee_recipient` / `gas_limit`: Must match proposer's preferences (ensures builder respects proposer's wishes)
+- `execution_requests_root`: Commitment to the `ExecutionRequests` carried in the envelope and processed by the child block
+- `fee_recipient` / `gas_limit`: Must match or be compatible with proposer's preferences (ensures builder respects proposer's wishes)
 - `execution_payment`: Reserved for trusted out-of-protocol auctions (must be 0 for public gossip)
 
 Once this bid is included in a block, the builder is committed—they MUST reveal a payload matching `block_hash` or forfeit their payment.
@@ -2401,16 +2470,16 @@ Without signatures, anyone could forge bids or claim to be a builder.
 ---
 
 **`ExecutionPayloadEnvelope`**
-- **Fields:** `payload`, `execution_requests`, `builder_index`, `beacon_block_root`, `slot`, `state_root`
+- **Fields:** `payload`, `execution_requests`, `builder_index`, `beacon_block_root`, `parent_beacon_block_root`
 
 **Why it exists:** After the beacon block is published, the builder reveals their payload in this envelope:
 - `payload`: The actual execution payload (transactions, state changes)
 - `beacon_block_root`: Links this envelope to the specific block that included the bid
-- `state_root`: Post-execution state root (enables stateless validation)
+- `parent_beacon_block_root`: Links the envelope back to the beacon parent root
 
 Note: `blob_kzg_commitments` was moved from the envelope to the bid, so commitments are locked in at bid time rather than reveal time.
 
-The envelope lets nodes verify the payload matches the bid commitment and execute the state transition.
+The envelope lets nodes verify the payload matches the bid commitment. State processing is deferred: the child block carries `parent_execution_requests` and calls `process_parent_execution_payload`.
 
 ---
 
@@ -2418,29 +2487,30 @@ The envelope lets nodes verify the payload matches the bid commitment and execut
 
 **Why they exist:** Builders need to know proposer preferences BEFORE constructing bids:
 - `fee_recipient`: Where the proposer wants to receive payment
-- `gas_limit`: The proposer's preferred gas limit for the block
+- `target_gas_limit`: The proposer's preferred gas target for the block
 
-Without this, builders would have to guess, and bids with wrong values would be rejected. Proposers broadcast signed preferences at epoch start so builders can prepare.
+Without this, builders would have to guess, and bids with wrong values would be rejected. Proposers may broadcast signed preferences for upcoming proposal slots in the proposer lookahead.
 
 ---
 
 #### Modified Containers
 
 **`BeaconBlockBody`**
-- **Added:** `signed_execution_payload_bid`, `payload_attestations`
+- **Added:** `signed_execution_payload_bid`, `payload_attestations`, `parent_execution_requests`
 - **Removed:** `execution_payload`, `blob_kzg_commitments`, `execution_requests`
 
 **Why it changed:** This is THE fundamental change of ePBS. Pre-GLOAS, proposers included the full execution payload in their block. Post-GLOAS:
 - Proposers include a BID (commitment) instead of the payload itself
 - The actual payload comes later from the builder
 - Proposers also include PTC votes from the previous slot
+- Child blocks include `parent_execution_requests` when building on the parent's FULL payload
 
 This separation is what enables trustless proposer-builder separation—the proposer commits to a bid without seeing the payload contents.
 
 ---
 
 **`BeaconState`**
-- **Added:** `builders`, `next_withdrawal_builder_index`, `latest_execution_payload_bid`, `execution_payload_availability`, `builder_pending_payments`, `builder_pending_withdrawals`, `latest_block_hash`, `payload_expected_withdrawals`
+- **Added:** `builders`, `next_withdrawal_builder_index`, `latest_execution_payload_bid`, `execution_payload_availability`, `builder_pending_payments`, `builder_pending_withdrawals`, `latest_block_hash`, `payload_expected_withdrawals`, `ptc_window`
 - **Removed:** `latest_execution_payload_header`
 
 **Why it changed:** The state needs new fields for builder economics:
@@ -2449,6 +2519,7 @@ This separation is what enables trustless proposer-builder separation—the prop
 - `builder_pending_withdrawals`: Confirmed payments waiting to execute
 - `execution_payload_availability`: Bitvector tracking which recent slots had payloads delivered
 - `latest_block_hash`: Tracks the chain of execution blocks for parent hash validation
+- `ptc_window`: Cached PTC committees for previous/current/lookahead epochs
 
 The removed `latest_execution_payload_header` is replaced by the bid/envelope system.
 
@@ -2477,11 +2548,12 @@ Fork choice now picks the best `(root, status)` pair, not just the best root. Th
 ---
 
 **`Store`**
-- **Added:** `execution_payload_states`, `ptc_vote`
+- **Added:** `payloads`, `payload_timeliness_vote`, `payload_data_availability_vote`
 
 **Why it changed:** Fork choice needs new tracking:
-- `execution_payload_states`: Maps block roots to post-payload-execution states (separate from post-block states)
-- `ptc_vote`: Tracks PTC votes per block to determine timeliness
+- `payloads`: Maps beacon block roots to verified `ExecutionPayloadEnvelope` objects
+- `payload_timeliness_vote`: Tracks PTC votes for payload presence/timeliness
+- `payload_data_availability_vote`: Tracks PTC votes for blob data availability
 
 ---
 
@@ -2539,13 +2611,13 @@ Note: This function does NOT verify PTC membership—it only checks structural v
 
 ---
 
-**`is_parent_block_full(state)`**
+**Parent-full check in `process_withdrawals(state)`**
 
-**Why it exists:** Some protocol rules depend on whether the parent block's payload was delivered. This function checks by comparing:
+**Why it exists:** Some protocol rules depend on whether the parent block's payload was delivered. The latest spec checks this by comparing:
 ```
-state.latest_execution_payload_bid.block_hash == state.latest_block_hash
+state.latest_block_hash == state.latest_execution_payload_bid.block_hash
 ```
-If the bid's committed `block_hash` equals the chain's `latest_block_hash`, the payload was successfully revealed and processed. Must be called BEFORE processing the current block's bid.
+If the bid's committed `block_hash` equals the chain's `latest_block_hash`, the parent payload was processed as FULL. This check must happen before the current block's bid overwrites `latest_execution_payload_bid`.
 
 ---
 
@@ -2591,20 +2663,20 @@ The result is compared against accumulated `weight` in pending payments to deter
 
 **Why it changed:** Each slot, the protocol must clear the execution payload availability flag for the NEXT slot. This is done by setting `execution_payload_availability[(slot + 1) % SLOTS_PER_HISTORICAL_ROOT] = 0`.
 
-**The reason:** The availability bitvector tracks which recent slots had their payloads delivered. Before a new slot begins, we reset its flag to 0 (not available). When a payload is later processed for that slot, it gets set to 1. This allows the protocol to track payload delivery history for recent slots.
+**The reason:** The availability bitvector tracks which recent slots had their payloads delivered. Before a new slot begins, we reset its flag to 0 (not available). If a later child block applies that slot's parent payload as FULL, the flag is set to 1. This allows the protocol to track payload delivery history for recent slots.
 
 ---
 
 **`process_epoch(state)`** — MODIFIED
 
-**Why it changed:** Added call to `process_builder_pending_payments()`.
+**Why it changed:** Added calls to `process_builder_pending_payments()` and `process_ptc_window()`.
 
 **The reason:** Pending payments have a lifecycle:
 1. Created when a bid is included in a block
 2. Accumulate weight as same-slot attestations arrive
 3. At epoch boundary: check if quorum reached → move to withdrawal queue OR expired → discard
 
-Epoch processing is the natural place for this "end of period" accounting.
+Epoch processing is the natural place for this "end of period" accounting and for sliding the cached PTC lookahead window.
 
 ---
 
@@ -2621,15 +2693,24 @@ This is the "commit" phase—the builder is now on the hook for this bid.
 
 ---
 
-**`process_execution_payload(state, signed_envelope, execution_engine)`**
+**`verify_execution_payload_envelope(state, signed_envelope, execution_engine)`**
 
 **Why it exists:** When the payload envelope arrives (after the beacon block), this function:
 1. Verifies the envelope matches the committed bid (`block_hash` must match)
 2. Verifies the builder's signature
 3. Sends the payload to the execution engine for validation
-4. Updates state with the execution results
+4. Verifies `execution_requests_root`, `payload.slot_number`, timestamp, parent hash, and expected withdrawals
 
-This is the "reveal" phase—the builder proves they have a valid payload matching their commitment.
+This is the "reveal" phase—the builder proves they have a valid payload matching their commitment. It is pure verification; state updates happen later through `process_parent_execution_payload` in the child block.
+
+---
+
+**`process_parent_execution_payload(state, block)`**
+
+**Why it exists:** When a child beacon block is processed, this function decides whether the parent was FULL or EMPTY:
+1. If the current bid's `parent_block_hash` does not equal the previous bid's `block_hash`, the parent is EMPTY and `parent_execution_requests` must be empty.
+2. If it matches, the parent is FULL, so the child block must carry execution requests whose hash equals the previous bid's `execution_requests_root`.
+3. It applies the parent execution requests, settles the parent builder payment, marks payload availability, and updates `latest_block_hash`.
 
 ---
 
@@ -2681,18 +2762,18 @@ This ordering ensures builder payments are processed first, then existing withdr
 2. Creates a node with `PAYLOAD_STATUS_PENDING` (waiting for payload to arrive)
 3. Processes any payload attestations in the block body
 
-The block is initially "incomplete" until the payload arrives via `on_execution_payload`.
+The block is initially pending until a valid envelope is stored by `on_execution_payload_envelope`.
 
 ---
 
-**`on_execution_payload(store, signed_envelope)`** — NEW
+**`on_execution_payload_envelope(store, signed_envelope)`** — NEW
 
 **Why it exists:** This is the handler for when a payload envelope arrives (separate from the beacon block). It:
 1. Finds the beacon block this payload belongs to (via `beacon_block_root`)
 2. Verifies the payload matches the bid commitment
-3. Executes the payload through the execution engine
-4. Stores the post-payload state in `execution_payload_states`
-5. Updates the node's status from PENDING to FULL
+3. Verifies blob data availability and execution validity
+4. Stores the verified envelope in `store.payloads`
+5. Makes the FULL fork-choice child available; actual state processing waits for the child block
 
 This handler bridges the gap between bid commitment and payload reveal.
 
@@ -2702,8 +2783,8 @@ This handler bridges the gap between bid commitment and payload reveal.
 
 **Why it exists:** When PTC votes arrive (via gossip or in blocks), this handler:
 1. Verifies the vote is from a valid PTC member
-2. Updates `store.ptc_vote[block_root]` bitmap
-3. May trigger resolution from PENDING to EMPTY/FULL based on vote count
+2. Updates `store.payload_timeliness_vote[block_root]`
+3. Updates `store.payload_data_availability_vote[block_root]`
 
 The `is_from_block` flag distinguishes gossip (must be current slot) from block inclusion (can be previous slot).
 
@@ -2734,7 +2815,7 @@ This function encapsulates this two-dimensional vote matching.
 **`should_extend_payload(store, root)`** — NEW
 
 **Why it exists:** Decides whether to extend a previous-slot block's FULL version. Returns true if ANY of:
-1. `is_payload_timely(store, root)` — PTC majority voted the payload was timely
+1. Payload is locally verified and PTC supports both payload timeliness and blob data availability
 2. `proposer_boost_root == Root()` — No proposer boost is currently set
 3. `store.blocks[proposer_boost_root].parent_root != root` — Proposer boost conflicts with this root
 4. `is_parent_node_full(store, store.blocks[proposer_boost_root])` — Proposer boost block's parent has FULL status
@@ -2747,7 +2828,7 @@ This determines whether fork choice should favor FULL over EMPTY for a given blo
 
 **Why it exists:** When two nodes have equal attestation weight, this provides a tiebreaker value. The logic is nuanced:
 
-- **If PENDING**, or **block is NOT from previous slot**: Return raw status (PENDING=0, EMPTY=1, FULL=2)
+- **If PENDING**, or **block is NOT from previous slot**: Return raw status (EMPTY=0, FULL=1, PENDING=2)
 - **If block IS from previous slot**:
   - EMPTY → returns 1
   - FULL → returns 2 if `should_extend_payload(root)` is true, else **0**
@@ -2781,7 +2862,7 @@ The shift gives builders and PTC more time while maintaining the overall slot st
 
 **`get_upcoming_proposal_slots(state, validator_index)`** — NEW
 
-**Why it exists:** Proposers must broadcast their preferences (fee_recipient, gas_limit) BEFORE builders construct bids. This function tells proposers which slots they'll propose in the next epoch, so they know when to broadcast `SignedProposerPreferences`.
+**Why it exists:** Proposers may broadcast their preferences (`fee_recipient`, `target_gas_limit`) BEFORE builders construct bids. This function tells proposers which slots they'll propose in the lookahead, so they know when to broadcast `SignedProposerPreferences`.
 
 ---
 
@@ -2793,7 +2874,7 @@ The shift gives builders and PTC more time while maintaining the overall slot st
 
 ---
 
-**`get_data_column_sidecars(beacon_block_root, slot, kzg_commitments, ...)`** — NEW
+**`get_data_column_sidecars(beacon_block_root, slot, cells_and_kzg_proofs)`** — MODIFIED
 
 **Why it exists:** In GLOAS, BUILDERS (not proposers) distribute blob data. After revealing a payload, the builder must also distribute DataColumnSidecars for data availability sampling. This function generates the sidecars from the blob data, ready for gossip.
 
@@ -2816,8 +2897,11 @@ The shift gives builders and PTC more time while maintaining the overall slot st
    - `builder_pending_payments`: Pre-allocated array of `2 * SLOTS_PER_EPOCH` empty entries (covers current + previous epoch)
    - `execution_payload_availability`: All 1s (`0b1` for each slot)—assumes all pre-fork payloads were delivered
    - `latest_block_hash`: Set to `pre.latest_execution_payload_header.block_hash` (continuity from pre-fork)
+   - `latest_execution_payload_bid`: Initialized from the pre-fork execution header with empty `ExecutionRequests()` root
+   - `payload_expected_withdrawals`: Empty list
+   - `ptc_window`: Initialized from the cached PTC lookahead
 3. Removes `latest_execution_payload_header` (replaced by bid/envelope system)
-4. Calls `onboard_builders_from_pending_deposits()` to process any pending builder deposits, allowing builders to be active immediately at the fork
+4. Calls `onboard_builders_from_pending_deposits()` to process pending builder deposits that can be routed to the builder registry
 
 **`onboard_builders_from_pending_deposits()`** processes pending deposits at the fork boundary, routing builder deposits (0x03 credentials or existing builder pubkeys) to the builder registry while keeping validator deposits in the pending queue. This ensures builders who deposited before the fork can start building blocks right away.
 
@@ -2836,7 +2920,7 @@ This is the one-time migration that enables ePBS.
 - Proposers listen and select the highest-value valid bid
 - Other nodes can validate bids for fork choice purposes
 
-**Important:** Builders should wait for `SignedProposerPreferences` before bidding—bids with wrong fee_recipient/gas_limit will be rejected.
+**Important:** Builders should wait for `SignedProposerPreferences` before bidding—bids with wrong `fee_recipient` or incompatible `gas_limit` will be rejected.
 
 ---
 
@@ -2866,9 +2950,9 @@ Aggregators collect these messages and create `PayloadAttestation` aggregates fo
 
 **Why it exists:** Before builders can create valid bids, they need to know what the proposer wants:
 - `fee_recipient`: Where to send payment
-- `gas_limit`: Maximum gas for the payload
+- `target_gas_limit`: Preferred gas target for the payload
 
-Proposers broadcast preferences at epoch start for all their slots in the next epoch. Without this, builders would have to guess (and likely be rejected).
+Proposers may broadcast preferences for upcoming proposal slots in the proposer lookahead. Without this, builders would have to guess (and likely be rejected).
 
 ---
 
@@ -3206,7 +3290,7 @@ PTC members can vote with **different data**, so multiple aggregates may be need
 │  • payload_present: true/false                                              │
 │  • blob_data_available: true/false                                          │
 │                                                                             │
-│  Theoretically 2² = 4 combinations, but one is impossible:                  │
+│  The two booleans produce 2² = 4 possible combinations:                     │
 │                                                                             │
 │  ┌──────────────────┬─────────────────────┬─────────────────────────────┐  │
 │  │ payload_present  │ blob_data_available │ Valid?                      │  │
@@ -3214,11 +3298,11 @@ PTC members can vote with **different data**, so multiple aggregates may be need
 │  │ true             │ true                │ ✓ Builder revealed all      │  │
 │  │ true             │ false               │ ✓ Payload seen, blobs lost  │  │
 │  │ false            │ false               │ ✓ Builder withheld all      │  │
-│  │ false            │ true                │ ✗ IMPOSSIBLE - can't have   │  │
-│  │                  │                     │   blobs without payload     │  │
+│  │ false            │ true                │ ✓ Blobs available, payload  │  │
+│  │                  │                     │   not timely/seen           │  │
 │  └──────────────────┴─────────────────────┴─────────────────────────────┘  │
 │                                                                             │
-│  So we have 3 meaningful combinations. MAX = 4 provides headroom.           │
+│  So MAX = 4 covers the full boolean state space.                            │
 │                                                                             │
 │  IMPORTANT: All payload attestations in a block must reference the SAME     │
 │  beacon_block_root (the parent block). From process_payload_attestation:    │

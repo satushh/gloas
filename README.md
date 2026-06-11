@@ -1333,6 +1333,7 @@ carries the EIP-7928 `block_access_list`.
   │  │   • slot is not current slot (with clock disparity allowance)      │   │
   │  │   • Already seen valid message from this validator                 │   │
   │  │   • beacon_block_root not yet seen                                 │   │
+  │  │   • referenced block is not at data.slot                           │   │
   │  └─────────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
   │  proposer_preferences                                                       │
@@ -2488,7 +2489,7 @@ Aggregation reduces block size—instead of 512 individual signatures, we get a 
 **`IndexedPayloadAttestation`**
 - **Fields:** `attesting_indices`, `data`, `signature`
 
-**Why it exists:** For signature verification and slashing, we need explicit validator indices (not a bitfield). This container "expands" a `PayloadAttestation` to list actual indices, making verification straightforward.
+**Why it exists:** For signature verification, clients need explicit validator indices rather than only aggregation bits. This container expands a `PayloadAttestation` into concrete attesting indices, making aggregate signature checks straightforward.
 
 ---
 
@@ -3029,10 +3030,13 @@ Proposers may broadcast preferences for upcoming proposal slots in the proposer 
 
 **`beacon_block`** — MODIFIED
 
-**Why it changed:** GLOAS blocks no longer contain execution payloads—they contain bids. Validation rules now:
-- Check the bid is valid (builder active, sufficient balance)
-- Verify bid signature
-- Don't expect an execution payload in the block body
+**Why it changed:** GLOAS blocks no longer contain execution payloads—they contain bids. The topic type changes to the modified `SignedBeaconBlock`; p2p removes the old in-block `ExecutionPayload` checks and replaces them with bid-specific checks:
+- `len(bid.blob_kzg_commitments)` is within the blob schedule limit
+- parent execution payload referenced by `bid.parent_block_hash` has been seen, or the block may be queued
+- if parent payload verification is complete, that parent passes validation
+- `bid.parent_block_root == block.parent_root`
+
+Full bid signature, active-builder, and balance checks are handled by block/state-transition validation, not as extra beacon-block gossip rules.
 
 The block is smaller and arrives faster; the payload follows separately.
 

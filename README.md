@@ -1039,7 +1039,7 @@ carries the EIP-7928 `block_access_list`.
   │  SPEC: fork-choice.md, validator.md                                         │
   │  CONTAINERS: LatestMessage (modified to use slot instead of epoch)          │
   │  FUNCTIONS: update_latest_messages(), validate_on_attestation()             │
-  │             is_attestation_same_slot(), is_supporting_vote()                │
+  │             is_attestation_same_slot()                                      │
   │             get_attestation_participation_flag_indices() (beacon-chain.md)  │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
@@ -2056,8 +2056,9 @@ carries the EIP-7928 `block_access_list`.
   │      │                                                                  │   │
   │      └──────────────────────────────────────────────────────────────────┘   │
   │                                                                             │
-  │  BEACON API SUMMARY (all new/modified endpoints for GLOAS):                 │
-  │  ═══════════════════════════════════════════════════════                    │
+  │  BEACON API SUMMARY (EXTERNAL / PENDING, NOT IN LOCAL CONSENSUS SPECS):    │
+  │  ═══════════════════════════════════════════════════════════════════════    │
+  │  Local Gloas specs define gossip and req/resp; HTTP APIs may differ.       │
   │                                                                             │
   │  BeaconBlock:                                                               │
   │    GET  /eth/v4/validator/blocks/{slot}         → Get block to sign         │
@@ -2186,6 +2187,12 @@ carries the EIP-7928 `block_access_list`.
   │  │                   │ • upgrade_to_gloas() function                    │   │
   │  │                   │ • State migration from Fulu                      │   │
   │  │                   │ • onboard_builders_from_pending_deposits()       │   │
+  │  ├───────────────────┼──────────────────────────────────────────────────┤   │
+  │  │ fast-confirmation │ • get_node_for_root returns ForkChoiceNode       │   │
+  │  │ .md               │ • Safe execution hash is confirmed parent hash   │   │
+  │  ├───────────────────┼──────────────────────────────────────────────────┤   │
+  │  │ weak-subjectivity │ • Weak subjectivity period formula updated for   │   │
+  │  │ .md               │   EIP-8061 churn split                           │   │
   │  └───────────────────┴──────────────────────────────────────────────────┘   │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
@@ -2211,7 +2218,7 @@ carries the EIP-7928 `block_access_list`.
 
 ## 9. SPEC REFERENCE INDEX
 
-Detailed reference for constants, containers, and functions defined in the GLOAS specs. Each entry explains not just what it is, but **why** it exists and how it fits into the ePBS design.
+Detailed reference for constants, containers, and functions from the GLOAS specs. Entries marked explainer-only are local explanatory concepts, not normative spec helpers. Each entry explains not just what it is, but **why** it exists and how it fits into the design.
 
 ---
 
@@ -2222,6 +2229,14 @@ Detailed reference for constants, containers, and functions defined in the GLOAS
 **What:** An index into the builder registry (`state.builders`).
 
 **Why it exists:** GLOAS introduces a completely separate registry for builders, distinct from the validator registry. Builders are specialized actors who construct execution payloads but do NOT perform validation duties (no attesting, no sync committee, no proposing). Having a separate index type prevents confusion and accidental mixing of builder and validator indices in the codebase. When you see `BuilderIndex`, you know it refers to `state.builders[i]`, not `state.validators[i]`.
+
+---
+
+#### `BlockAccessList`
+
+**What:** `ByteList[MAX_BYTES_PER_TRANSACTION]` carrying an RLP-encoded block access list in the Gloas `ExecutionPayload`.
+
+**Why it exists:** Gloas inherits the EIP-7928 payload shape. The bid does not carry the access list directly; it commits to it through `block_hash`, because `block_access_list` lives inside the execution payload.
 
 ---
 
@@ -2354,12 +2369,13 @@ The value is chosen to balance security margins with practical constraints on bl
 #### Fork Choice Constants
 
 **`PAYLOAD_TIMELY_THRESHOLD`** = `256` (PTC_SIZE // 2)
+**`DATA_AVAILABILITY_TIMELY_THRESHOLD`** = `256` (PTC_SIZE // 2)
 
-**What:** Minimum PTC votes needed to consider a payload "timely."
+**What:** Minimum PTC votes needed to consider a payload timely, and minimum PTC votes needed to consider blob data available.
 
-**Why it exists:** Fork choice needs to decide: was the payload delivered on time, or did the builder withhold? If >256 of 512 PTC positions vote "present," we consider it timely. Simple majority (50%+1) prevents:
-- A minority of slow/offline PTC members from incorrectly marking a timely payload as late
-- An attacker from claiming timeliness by bribing only a minority
+**Why it exists:** Fork choice separately evaluates payload timeliness and blob data availability. If >256 of 512 PTC positions vote for the queried value, the corresponding view wins. Simple majority (50%+1) prevents:
+- A minority of slow/offline PTC members from incorrectly marking a timely/available payload as late or unavailable
+- An attacker from claiming timeliness or data availability by bribing only a minority
 
 **`PAYLOAD_STATUS_EMPTY`** = `0`, **`PAYLOAD_STATUS_FULL`** = `1`, **`PAYLOAD_STATUS_PENDING`** = `2`
 
@@ -2372,15 +2388,22 @@ The value is chosen to balance security margins with practical constraints on bl
 
 This three-state model lets fork choice reason about partial blocks and choose the best chain considering payload availability.
 
+**`ATTESTATION_TIMELINESS_INDEX`** = `0`, **`PTC_TIMELINESS_INDEX`** = `1`, **`NUM_BLOCK_TIMELINESS_DEADLINES`** = `2`
+
+**What:** Indexes for the two block-timeliness deadlines tracked in fork choice.
+
+**Why they exist:** Gloas has separate timeliness signals for regular attestations and PTC payload attestations. `NUM_BLOCK_TIMELINESS_DEADLINES = 2` sizes the per-block timeliness vector that tracks those separate deadlines.
+
 ---
 
 #### Time Parameters
 
 **`ATTESTATION_DUE_BPS_GLOAS`** = `2500` (25% = 3 seconds into slot)
+**`SYNC_MESSAGE_DUE_BPS_GLOAS`** = `2500` (25% = 3 seconds into slot)
 
-**What:** When attesters must submit their attestations.
+**What:** When attesters and sync committee members should submit their messages.
 
-**Why it changed:** Pre-GLOAS, attestations were due at 33% (4 seconds). GLOAS moves this earlier to 25% (3 seconds). Why?
+**Why it changed:** Pre-GLOAS, attestations were due at 33% (4 seconds). GLOAS moves attestations and sync messages earlier to 25% (3 seconds). Why?
 
 The new slot timeline needs more time for:
 1. Builder to see the block and release the payload
@@ -2389,11 +2412,19 @@ The new slot timeline needs more time for:
 
 Moving attestations earlier frees up time later in the slot for these new activities.
 
+**`AGGREGATE_DUE_BPS_GLOAS`** = `5000` (50% = 6 seconds into slot)
+**`CONTRIBUTION_DUE_BPS_GLOAS`** = `5000` (50% = 6 seconds into slot)
+
+**What:** When aggregate attestations and sync committee contributions are due.
+
+**Why it changed:** Aggregates and contributions move to the middle of the slot so normal consensus aggregation finishes before the PTC payload-attestation deadline.
+
+**`PAYLOAD_DUE_BPS`** = `7500` (75% = 9 seconds into slot)
 **`PAYLOAD_ATTESTATION_DUE_BPS`** = `7500` (75% = 9 seconds into slot)
 
-**What:** When PTC members must submit their payload attestations.
+**What:** When the builder payload is considered due, and when PTC members must submit their payload attestations.
 
-**Why this timing:** PTC members vote on whether they've seen the payload. Waiting until 75% of the slot (9 seconds) gives builders maximum time to reveal their payload while still leaving 3 seconds for the next proposer to collect and aggregate PTC votes.
+**Why this timing:** PTC members vote on whether they've seen the payload before `get_payload_due_ms()` and whether blob data is available. Waiting until 75% of the slot (9 seconds) gives builders maximum time to reveal their payload while still leaving 3 seconds for the next proposer to collect and aggregate PTC votes.
 
 ---
 
@@ -2825,6 +2856,19 @@ This ordering ensures builder payments are processed first, then existing withdr
 
 #### Fork Choice Functions
 
+**`notify_forkchoice_updated` inputs** — MODIFIED
+
+**Why it changed:** In Gloas, a confirmed beacon block's own payload may still only be a bid commitment. The execution hashes sent to the EL therefore use parent payload hashes:
+
+```python
+finalized_block_hash = finalized_block_bid.parent_block_hash
+safe_block_hash = get_safe_execution_block_hash(fcr_store)
+```
+
+All other `notify_forkchoice_updated` semantics are inherited from prior forks.
+
+---
+
 **`on_block(store, signed_block)`** — MODIFIED
 
 **Why it changed:** Blocks no longer contain execution payloads—they contain bids. The handler now:
@@ -2872,13 +2916,13 @@ Note: The tiebreaker logic is nuanced—FULL doesn't always beat EMPTY. For prev
 
 ---
 
-**`is_supporting_vote(store, node, message)`** — NEW
+**`is_supporting_vote(store, node, message)`** — EXPLAINER-ONLY
 
-**Why it exists:** Does an attestation support a particular fork choice node? It's not just about ancestry anymore—we also need to check payload status compatibility:
+**Why it appears here:** This is a useful explanatory concept, not a normative helper in `fork-choice.md`. It answers: does an attestation support a particular fork choice node? It's not just about ancestry anymore; payload status compatibility also matters:
 - If attester voted `payload_present=true`, their vote supports FULL nodes
 - If attester voted `payload_present=false`, their vote supports EMPTY nodes
 
-This function encapsulates this two-dimensional vote matching.
+The normative fork-choice spec folds this logic into weight/scoring behavior rather than defining an `is_supporting_vote` function.
 
 ---
 
@@ -2909,7 +2953,7 @@ Key insight: FULL doesn't always win! If `should_extend_payload` returns false, 
 
 **`get_attestation_score(store, node, state)`** — MODIFIED
 
-**Why it changed:** This function was refactored out of `get_weight` for clarity. It computes the total effective balance of validators whose latest message supports the given `ForkChoiceNode` (using `is_supporting_vote`). The function now takes a `ForkChoiceNode` instead of a plain root, since votes must match both the block root and payload status.
+**Why it changed:** This function computes the total effective balance of validators whose latest message supports the given `ForkChoiceNode`. It now takes a `ForkChoiceNode` instead of a plain root, since votes must match both the block root and payload status.
 
 ---
 
@@ -3146,6 +3190,24 @@ Gloas excludes them from newly computed proposer duties.
 one flow does not consume the whole shared churn budget. Deposits still consume
 activation-only churn, exits use exit churn, and consolidations use their own
 limit.
+
+---
+
+**Weak subjectivity period** — EIP-8061
+
+**Why it changed:** `compute_weak_subjectivity_period` now accounts for the split
+churn model:
+
+```python
+delta = (
+    2 * get_exit_churn_limit(state) // 3
+    + get_activation_churn_limit(state) // 3
+    + get_consolidation_churn_limit(state)
+)
+```
+
+The weak subjectivity period uses this `delta` because validator-set churn is no
+longer governed by one shared churn limit.
 
 ---
 
@@ -3642,3 +3704,77 @@ payload.slot_number == state.slot
 That lets the execution layer expose SLOTNUM semantics and gives consensus a
 direct payload-level slot check instead of relying only on timestamp-derived
 inference.
+
+---
+
+### Q19: Why does Gloas change the weak subjectivity period?
+
+EIP-8061 splits activation, exit, and consolidation churn into separately tuned
+limits. Weak subjectivity period calculations depend on how quickly the validator
+set can change, so the old single-churn formula is no longer accurate.
+
+Gloas computes the churn term as:
+
+```python
+delta = 2/3 * exit_churn + 1/3 * activation_churn + consolidation_churn
+```
+
+That reflects the new lifecycle queues instead of pretending all churn flows use
+one shared budget.
+
+---
+
+### Q20: Why does `notify_forkchoice_updated` use parent execution hashes for finalized/safe values?
+
+In Gloas, a beacon block contains a bid for its own execution payload, but that
+payload is not applied until a child builds on it as FULL. Therefore the
+confirmed or finalized beacon block's own `block_hash` may still only be a
+commitment.
+
+The EL receives:
+
+```python
+finalized_block_hash = finalized_block_bid.parent_block_hash
+safe_block_hash = get_safe_execution_block_hash(fcr_store)
+```
+
+These point to execution payloads that are actually safe/finalized under the
+Gloas parent-payload processing model.
+
+---
+
+### Q21: Why are there two block-timeliness indexes?
+
+Gloas tracks two distinct timeliness deadlines:
+
+- `ATTESTATION_TIMELINESS_INDEX = 0`: regular beacon attestation timeliness
+- `PTC_TIMELINESS_INDEX = 1`: payload-attestation/PTC timeliness
+
+`NUM_BLOCK_TIMELINESS_DEADLINES = 2` sizes the per-block vector. Keeping these
+separate lets fork choice account for normal attestation timing and payload
+availability timing independently.
+
+---
+
+### Q22: What happens if proposer preferences are missing?
+
+For trustless gossip bids, builders need a matching `SignedProposerPreferences`
+for the proposal slot and dependent root. If preferences are missing, bid gossip
+validation ignores the bid rather than accepting a guessed `fee_recipient` or
+`target_gas_limit`.
+
+Practically, a proposer that does not publish preferences is signaling that it
+will not accept trustless public-gossip bids for that slot, though out-of-band or
+self-build paths may still exist.
+
+---
+
+### Q23: Is `is_supporting_vote` a real spec helper or just an explanatory concept?
+
+It is an explanatory concept in this README, not a normative helper currently
+defined in `fork-choice.md`.
+
+The concept is still useful: a vote must match both the beacon block root and the
+payload status variant being scored. But implementers should follow the
+normative fork-choice functions directly rather than looking for an
+`is_supporting_vote` function in the spec.

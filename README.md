@@ -279,9 +279,9 @@ carries the EIP-7928 `block_access_list`.
   │  PAYLOAD_DUE_BPS             = 7500 (75% = 9s)  ← NEW! Payload due          │
   │  PAYLOAD_ATTESTATION_DUE_BPS = 7500 (75% = 9s)  ← NEW! For PTC              │
   │                                                                             │
-  │  FUNCTIONS (fork-choice.md): get_attestation_due_ms(epoch)                  │
-  │                              get_payload_attestation_due_ms(epoch)          │
-  │                              get_payload_due_ms(epoch)                      │
+  │  FUNCTIONS (fork-choice.md): get_attestation_due_ms()                       │
+  │                              get_payload_attestation_due_ms()               │
+  │                              get_payload_due_ms()                           │
   │                                                                             │
   │  WHY EARLIER ATTESTATION DEADLINE?                                          │
   │  ─────────────────────────────────                                          │
@@ -898,9 +898,10 @@ carries the EIP-7928 `block_access_list`.
   │  THE ForkChoiceNode STRUCTURE:                                              │
   │  ════════════════════════════                                               │
   │                                                                             │
-  │  class ForkChoiceNode(Container):                                           │
+  │  @dataclass(eq=True, frozen=True)                                           │
+  │  class ForkChoiceNode:                                                      │
   │      root: Root              # The beacon block root                        │
-  │      payload_status: uint8   # EMPTY=0, FULL=1, PENDING=2                   │
+  │      payload_status: PayloadStatus  # EMPTY=0, FULL=1, PENDING=2            │
   │                                                                             │
   │  A single beacon block root can have MULTIPLE nodes in fork choice!         │
   │  One for each payload status (but PENDING is transitional).                 │
@@ -908,7 +909,8 @@ carries the EIP-7928 `block_access_list`.
   │  SPEC: fork-choice.md                                                       │
   │  CONSTANTS: PAYLOAD_STATUS_EMPTY=0, PAYLOAD_STATUS_FULL=1,                  │
   │             PAYLOAD_STATUS_PENDING=2, PAYLOAD_TIMELY_THRESHOLD=256          │
-  │  CONTAINERS: ForkChoiceNode, LatestMessage (modified), Store (modified)     │
+  │  CONTAINERS: ForkChoiceNode (modified), LatestMessage (modified),           │
+  │              Store (modified)                                               │
   │                                                                             │
   └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -966,8 +968,9 @@ carries the EIP-7928 `block_access_list`.
   │                                                                             │
   │  When deciding between EMPTY and FULL for previous slot's block:            │
   │                                                                             │
-  │  should_extend_payload(root) returns True if:                               │
-  │    - payload locally verified AND PTC supports timeliness + blob DA, OR     │
+  │  should_extend_payload(root) first requires local payload verification.     │
+  │  If the payload is verified, it returns True if:                            │
+  │    - PTC supports payload timeliness AND blob DA, OR                        │
   │    - No proposer boost yet, OR                                              │
   │    - Proposer boost is for different parent, OR                             │
   │    - Proposer boost block builds on FULL version                            │
@@ -982,8 +985,8 @@ carries the EIP-7928 `block_access_list`.
   │              ATTESTATIONS NOW CARRY PAYLOAD INFORMATION                     │
   ├─────────────────────────────────────────────────────────────────────────────┤
   │                                                                             │
-  │  BEFORE: attestation.data.index = committee index (0 to N-1)                │
-  │  ═══════════════════════════════════════════════════════════                │
+  │  BEFORE (since Electra): data.index = 0; committees use committee_bits      │
+  │  ═══════════════════════════════════════════════════════════════════════    │
   │                                                                             │
   │  AFTER: attestation.data.index = payload status signal (0 or 1)             │
   │  ════════════════════════════════════════════════════════════               │
@@ -1172,7 +1175,6 @@ carries the EIP-7928 `block_access_list`.
   │             is_payload_verified(), notify_ptc_messages()                    │
   │             get_parent_payload_status(), is_parent_node_full()              │
   │             should_extend_payload(), get_payload_status_tiebreaker()        │
-  │             get_attestation_score() (modified)                              │
   │  STORE FIELDS: payloads, payload_timeliness_vote,                           │
   │                payload_data_availability_vote (new)                         │
   │                                                                             │
@@ -1912,7 +1914,7 @@ carries the EIP-7928 `block_access_list`.
   │  CONTAINERS: PayloadAttestationMessage, PayloadAttestationData              │
   │  BEACON API (current #552 plus open #580/#608 proposals):                   │
   │    GET  /eth/v4/validator/blocks/{slot}                                     │
-  │         → Proposer retrieves unsigned gloas BeaconBlock to sign             │
+  │         → Open #580: proposer retrieves unsigned Gloas block to sign        │
   │    POST /eth/v2/beacon/blocks                                               │
   │         → Proposer publishes signed BeaconBlock to network                  │
   │    POST /eth/v1/validator/proposer_preferences                              │
@@ -2406,7 +2408,7 @@ The value is chosen to balance security margins with practical constraints on bl
 **`PAYLOAD_TIMELY_THRESHOLD`** = `256` (PTC_SIZE // 2)
 **`DATA_AVAILABILITY_TIMELY_THRESHOLD`** = `256` (PTC_SIZE // 2)
 
-**What:** Minimum PTC votes needed to consider a payload timely, and minimum PTC votes needed to consider blob data available.
+**What:** PTC votes must strictly exceed 256 to consider a payload timely or blob data available.
 
 **Why it exists:** Fork choice separately evaluates payload timeliness and blob data availability. If >256 of 512 PTC positions vote for the queried value, the corresponding view wins. Simple majority (50%+1) prevents:
 - A minority of slow/offline PTC members from incorrectly marking a timely/available payload as late or unavailable
@@ -2525,7 +2527,7 @@ At each epoch boundary, the protocol checks: did `weight` reach 60% threshold? I
 - `amount`: How much ETH to transfer
 - `builder_index`: Which builder is paying (to deduct from their balance)
 
-Withdrawals are processed during the withdrawal sweep, interleaved with regular validator withdrawals.
+Builder pending withdrawals are drained first in the next payload's withdrawal list, before partial withdrawals, builder sweep withdrawals, and validator sweep withdrawals. They share the per-payload withdrawal limit and index sequence with those later categories.
 
 ---
 
@@ -2602,7 +2604,7 @@ The envelope lets nodes verify the payload matches the bid commitment. State pro
 
 **Why they exist:** Builders need to know proposer preferences BEFORE constructing bids:
 - `fee_recipient`: Where the proposer wants to receive payment
-- `target_gas_limit`: The proposer's preferred gas target for the block
+- `target_gas_limit`: The proposer's preferred gas limit for the block
 
 Without this, builders would have to guess, and bids with wrong values would fail gossip or block validation. Proposers may broadcast signed preferences for upcoming proposal slots in the proposer lookahead.
 
@@ -2698,7 +2700,7 @@ Post-GLOAS, BUILDERS distribute sidecars. The KZG commitments are now stored in 
 2. Use `bid.blob_kzg_commitments` directly for verification
 3. Verify `slot` and `beacon_block_root` match
 
-No proposer signature needed—the bid commitment handles authenticity. A new `verify_data_column_sidecar_kzg_proofs` function takes `kzg_commitments` as a parameter alongside the sidecar.
+No proposer signature needed—the bid commitment handles authenticity. Gloas modifies `verify_data_column_sidecar_kzg_proofs` so it takes `kzg_commitments` as a parameter alongside the sidecar.
 
 ---
 
@@ -2776,7 +2778,13 @@ The same helper is also used for Gloas proposer-index computation and next sync 
 
 **`get_ptc(state, slot)`**
 
-**Why it exists:** Given a slot, which 512 PTC positions form the Payload Timeliness Committee? This function computes the PTC by applying balance-weighted selection to that slot's attestation committees. The result is deterministic, can contain duplicate validators, and lets all nodes agree on committee positions.
+**Why it exists:** Given a slot, which 512 PTC positions form the Payload Timeliness Committee? `get_ptc` is a lookup into the cached `state.ptc_window`; it does not recompute the committee on demand.
+
+---
+
+**`compute_ptc(state, slot)`**
+
+**Why it exists:** This function computes the PTC by applying balance-weighted selection to the slot's attestation committees. The result is deterministic, can contain duplicate validators, and is cached into `state.ptc_window` by the PTC-window maintenance logic.
 
 ---
 
@@ -2882,7 +2890,7 @@ The modification adds: if this attestation is for the current slot, add the atte
 
 **`get_expected_withdrawals(state)`** — MODIFIED
 
-**Why it changed:** Withdrawals now include multiple new categories and the return type is the new `ExpectedWithdrawals` dataclass (instead of a tuple). The function builds the withdrawal list in this order:
+**Why it changed:** The Capella-era `ExpectedWithdrawals` dataclass gains builder-related count fields. The function now builds the withdrawal list in this order:
 1. **Builder withdrawals** (`get_builder_withdrawals`): Payments from builders to proposers that reached quorum
 2. **Partial withdrawals** (`get_pending_partial_withdrawals`): Validator partial balance withdrawals (existing)
 3. **Builder sweep withdrawals** (`get_builders_sweep_withdrawals`): Builder balance withdrawals when exiting
@@ -3100,7 +3108,7 @@ Timing is critical—builders should reveal quickly so PTC can vote "present."
 - Votes on whether blob data is available
 - Data that will be aggregated for block inclusion
 
-Aggregators collect these messages and create `PayloadAttestation` aggregates for the next block.
+The next-slot proposer collects these messages and creates `PayloadAttestation` aggregates for block inclusion. There is no separate PTC aggregator role or aggregate gossip topic.
 
 ---
 
@@ -3108,7 +3116,7 @@ Aggregators collect these messages and create `PayloadAttestation` aggregates fo
 
 **Why it exists:** Before builders can create valid bids, they need to know what the proposer wants:
 - `fee_recipient`: Where to send payment
-- `target_gas_limit`: Preferred gas target for the payload
+- `target_gas_limit`: Preferred gas limit for the payload
 
 Proposers may broadcast preferences for upcoming proposal slots in the proposer lookahead. Without this, builders would have to guess, and their bids would fail validation or be ignored.
 
@@ -3342,7 +3350,10 @@ assert (
 )
 ```
 
-These represent **money already committed** from previous bids. You can't spend the same ETH twice!
+These represent **money already committed** from previous bids. You can't spend the same ETH twice. There are two settlement paths:
+
+- **Normal FULL-parent path:** when the child block builds on the parent's FULL payload, `process_parent_execution_payload` applies the parent payload's execution requests and calls `settle_builder_payment`, moving the payment immediately from `builder_pending_payments` to `builder_pending_withdrawals`.
+- **Withheld/EMPTY fallback:** if no child processes the parent as FULL, `process_builder_pending_payments` checks the previous epoch's pending payments in one batch at the epoch boundary. Payments with enough same-slot attestation weight move to `builder_pending_withdrawals`; the rest are discarded.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -3386,25 +3397,35 @@ These represent **money already committed** from previous bids. You can't spend 
 │    Now pending_payments = 5 + 10 = 15 ETH                                   │
 │                                                                             │
 │  ═══════════════════════════════════════════════════════════════════════   │
-│  EPOCH BOUNDARY: Slot 100's payment reaches quorum!                         │
+│  SLOT 101: Child block builds on slot 100 as FULL                           │
 │  ═══════════════════════════════════════════════════════════════════════   │
 │                                                                             │
-│    • Slot 100's 5 ETH moves from pending_payments → pending_withdrawals     │
+│    • process_parent_execution_payload applies slot 100 execution requests   │
+│    • settle_builder_payment moves slot 100's 5 ETH:                         │
+│        pending_payments → pending_withdrawals                               │
 │    • Now:                                                                   │
-│        pending_payments = 10 ETH (slot 101 still pending)                   │
+│        pending_payments = 10 ETH (slot 101's own bid is still pending)      │
 │        pending_withdrawals = 5 ETH (confirmed, waiting to withdraw)         │
 │                                                                             │
 │  ═══════════════════════════════════════════════════════════════════════   │
-│  SLOT 150: Bob wants to bid again. How much?                                │
+│  FALLBACK: if slot 100 was not processed as FULL                            │
 │  ═══════════════════════════════════════════════════════════════════════   │
 │                                                                             │
-│    pending_balance = 10 (pending_payments) + 5 (pending_withdrawals)        │
+│    At the epoch boundary, all previous-epoch pending payments are checked   │
+│    together. Payments with enough same-slot attestation weight move to      │
+│    pending_withdrawals; payments below quorum are discarded.                │
+│                                                                             │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│  SLOT 102: Bob wants to bid again. How much?                                │
+│  ═══════════════════════════════════════════════════════════════════════   │
+│                                                                             │
+│    pending_balance = 10 (slot 101 obligation) + 5 (pending_withdrawal)      │
 │    min_balance = 1 + 15 = 16 ETH                                           │
 │    available = 50 - 16 = 34 ETH                                            │
 │    X <= 34 ETH  ◄── Max new bid!                                            │
 │                                                                             │
 │  ═══════════════════════════════════════════════════════════════════════   │
-│  LATER: The 5 ETH pending_withdrawal gets processed                         │
+│  NEXT PAYLOAD WITH WITHDRAWAL SPACE: pending_withdrawal gets processed      │
 │  ═══════════════════════════════════════════════════════════════════════   │
 │                                                                             │
 │    • 5 ETH is actually deducted from Bob's balance                          │
@@ -3424,15 +3445,16 @@ These represent **money already committed** from previous bids. You can't spend 
 │                         PAYMENT LIFECYCLE                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│   BID INCLUDED          EPOCH BOUNDARY           WITHDRAWAL PROCESSED       │
-│   IN BLOCK              (quorum check)           (actual ETH transfer)      │
+│   BID INCLUDED          SETTLED                 WITHDRAWAL PROCESSED       │
+│   IN BLOCK              (FULL child or quorum)  (actual ETH transfer)      │
 │       │                      │                          │                   │
 │       ▼                      ▼                          ▼                   │
 │  ┌─────────┐           ┌─────────┐              ┌─────────────────┐        │
-│  │ builder │  ──────►  │ builder │   ──────►    │ Actual balance  │        │
-│  │ pending │  quorum   │ pending │   withdraw   │ decreased,      │        │
-│  │ payments│  reached  │withdrawals  epoch     │ ETH sent to     │        │
-│  │         │           │         │   reached    │ proposer        │        │
+│  │ builder │  FULL or  │ builder │   next       │ Actual balance  │        │
+│  │ pending │  fallback │ pending │   payload's  │ decreased,      │        │
+│  │ payments│  quorum   │withdrawals  next       │ ETH sent to     │        │
+│  │         │  check    │         │   payload    │ proposer        │        │
+│  │         │           │         │   list       │                 │        │
 │  └─────────┘           └─────────┘              └─────────────────┘        │
 │                                                                             │
 │  "I might have     "I definitely       "Money actually                      │
@@ -3444,7 +3466,7 @@ These represent **money already committed** from previous bids. You can't spend 
 ```
 
 **TL;DR:**
-- `pending_payments` = bids waiting for quorum confirmation (might pay)
+- `pending_payments` = bids waiting for FULL-child settlement or fallback quorum (might pay)
 - `pending_withdrawals` = confirmed payments waiting to be withdrawn (will pay)
 - Both are "reserved" and can't be used for new bids
 
@@ -3639,7 +3661,7 @@ payload variant fork choice should extend.
 ### Q12: Why are builder withdrawals encoded using `BUILDER_INDEX_FLAG` in `Withdrawal.validator_index`?
 
 Withdrawals already have a `validator_index` field. Gloas reuses that container
-for builder withdrawals by setting `BUILDER_INDEX_FLAG` in the high bit.
+for builder withdrawals by setting the `BUILDER_INDEX_FLAG` bit (`uint64(2**40)`, i.e. bit 40).
 
 That gives a disjoint namespace:
 
@@ -3882,3 +3904,36 @@ POST /eth/v1/beacon/states/{state_id}/builders
 
 This matters because builder bids use `builder_index`, and clients need a
 standard way to resolve pubkeys, status, and balance before preparing bids.
+
+---
+
+### Q28: Are user transactions processed by the child block too?
+
+No. User transactions are processed by the execution layer when the parent
+slot's `SignedExecutionPayloadEnvelope` is revealed and verified. The child
+beacon block does **not** re-execute those transactions.
+
+What the child block processes is the parent payload's `execution_requests`.
+Those are consensus-facing requests from the execution payload, such as deposit,
+withdrawal, and consolidation requests, carried through
+`parent_execution_requests`.
+
+For slot `N`, the flow is:
+
+1. The builder creates an execution payload containing transactions,
+   withdrawals, the EL `state_root`, receipts, blobs, and `execution_requests`.
+2. The builder's bid commits to that payload with `block_hash`,
+   `blob_kzg_commitments`, and `execution_requests_root`.
+3. Beacon block `N` includes only the bid, so its beacon-state transition does
+   not process slot `N` transactions.
+4. The builder reveals the payload envelope for block `N`; full nodes pass the
+   transaction list to the execution engine and verify the EL transition.
+5. Child block `N+1` decides whether to build on `N` as FULL or EMPTY. If FULL,
+   it includes `parent_execution_requests` matching the parent bid's
+   `execution_requests_root`, and the beacon-state transition applies those
+   requests.
+
+The EL `state_root` is not enough for full nodes: they need the actual
+transaction list to verify the transition, recompute payload roots, serve data,
+and build future payloads. Gloas moves delivery of that list out of the beacon
+block and into the same-slot payload envelope.
